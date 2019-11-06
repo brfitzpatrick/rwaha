@@ -1,0 +1,94 @@
+---
+title: "S6 Preparation of Roads and Buildings Data"
+author: "Author Blank for Double Blind Peer Review"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Introduction
+
+In this file I prepare the data Marielle calculated with ArcMap that quantify for each plot the distance from the plot centre to each of the nearest small road, big road and building.
+Below I prepare these data for use as explanatory variable in our models for ant occurence.
+
+Input Data :
+Roads: `fgeolib.geolib.swissTLM_1_2_STRASSEN\fgeolib.geolib.TLM_STRASSE_2016`
+
+Buildings: `fgeolib.geolib.swissTLM_1_2_BAUTEN\fgeolib.geolib.TLM_GEBAEUDE_FOOTPRINT_2016` 
+
+NFI Plot Coordinates: `Richtige Koordinaten der besuchten Probeflächen_2009-2017_Rohdaten.xlsx`
+
+## R packages used:
+In this data preparation I make use of the [tidyverse](https://www.tidyverse.org/) suite of packages.
+I also use `readxl` for reading data into R from Excel files.
+
+```{r message=FALSE, warning=FALSE}
+library(readxl)
+library(tidyverse)
+```
+
+## Read in the Data
+`Plotcent_09_17_roads_buildings.xlsx` has column names in the first row and column units in the second row.
+
+Reading in the column names and units:
+```{r}
+rdbd.cn.cu.tb <- read_excel(path = '~/rwa/data/roads_buildings/Plotcent_09_17_roads_buildings_20180326.xlsx', sheet = 'Plotcent_09_17_nearest', n_max = 1)
+```
+
+Abbreviate the column names:
+  abberviate 'big' as 'l' (for large) so we can reserve 'b' for 'building'
+```{r rows.print=31}
+CN.tb <- tibble(Orig = colnames(rdbd.cn.cu.tb)) %>%
+  mutate(Abbrv = str_replace_all(string = Orig, pattern = 'near500_', replacement = '') %>%
+    str_replace_all(string = ., pattern = 'bigroads', replacement = 'lr') %>%
+    str_replace_all(string = ., pattern = 'smroads', replacement = 'sr') %>%
+    str_replace_all(string = ., pattern = 'dist', replacement = 'dst') %>%
+    str_replace_all(string = ., pattern = 'build', replacement = 'b')
+  )
+```
+
+Read in the data:
+```{r}
+rdbd.all.tb <- read_excel(path = '~/rwa/data/roads_buildings/Plotcent_09_17_roads_buildings_20180326.xlsx', sheet = 'Plotcent_09_17_nearest', col_names = CN.tb$Abbrv, skip = 2)
+```
+
+## Subset the Data
+
+Subset to the covariates and the plot identifier `CLNR`.
+Note: FID = file-internal identifiers of the roads or buildings that were found to be "nearest" to the plots so we don't need to consider these as covariates
+
+near_dst_b = Distance to nearest Building
+near_dst_sr = Distance to nearest Small Road
+near_dst_lr = Distance to nearest Large Road
+
+```{r}
+rdbd.tb <- select(rdbd.all.tb, CLNR, near_dst_b, near_dst_sr, near_dst_lr)
+
+slice(rdbd.tb, 1:10)
+```
+
+Load the prepared ants data and subset the prepared roads and buildings data to the plots (CLNR) that were searched for ant mounds:
+
+```{r}
+load('~/rwa/data/ants/Preparations_of_Ameisen_Data_2009-2017_pourWSL_22.03.2018_xlsx/Red_Wood_Ant_Mound_Occurence.RData')
+```
+
+```{r}
+rdbd.tb <- select(RWAMO.tb, CLNR) %>%
+  left_join(x = ., y = rdbd.tb, by = 'CLNR')
+```
+
+Check for missing data:
+```{r}
+anyNA(rdbd.tb)
+```
+
+View the summary statistics for the prepared data:
+```{r}
+summary(rdbd.tb)
+```
+
+Write out the prepared data:
+```{r, eval = FALSE}
+save(list = 'rdbd.tb', file = '~/rwa/data/roads_buildings/roads_buildings_data_prepared_unfiltered.RData')
+```

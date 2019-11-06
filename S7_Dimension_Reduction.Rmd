@@ -1,0 +1,3162 @@
+---
+title: "S7 Dimension Reduction"
+author: "Author Blank for Double Blind Peer Review"
+output:
+  html_document:
+    df_print: paged
+---
+
+In this file I use the R package `ClustOfVar`[1] to cluster related explanatory variables and summarise the information in each cluster with a central synthetic variable.
+`ClustOfVar` is able to function on sets of variables that include both numeric and categorical variables and includes a bootstrap based routine to examine the stability of the partitioning of these variables into various numbers of clusters.
+This file is divided into the following four sections:
+
+*1. Clustering the NFI Data*
+
+*2. Clustering the Terrain Data*
+
+*3. Clustering the Terrain \& Climate Data*
+
+*4. Aggregating the final Set of Explanatory Variables*
+
+# Clustering the NFI Data
+
+```{r, message = FALSE, warning = FALSE}
+library(caret)
+library(heatmaply)
+library(ClustOfVar)
+library(glue)
+library(tidyverse)
+```
+
+## Clustering all descriptions of Plots that do not quantify human disturbance
+
+
+### Read in the prepared NFI Field Data
+
+```{r}
+load('~/rwa/data/NFI/Prepared_Field_Data/NFI.Plot.Data.Infilled.RData')
+```
+
+### Subset to the metrics that do not describe direct human disturbance of the plots
+
+```{r}
+NFI.Set.1.tb <- select(NFI.Plot.Data, -AHAUFEN, -Stone.Struc, -Tracks, -UEBERBEL, -WEID, -FLSCHADEN)
+```
+
+```{r}
+NFI.Set.1.quant.tb <- select(NFI.Set.1.tb, -CLNR) %>%
+  select_if(is.numeric)
+```
+
+```{r}
+NFI.Set.1.qual.tb <- select(NFI.Set.1.tb, -CLNR) %>%
+  select_if(is.character)
+```
+
+Check:
+```{r}
+if_else(identical(sort(c(colnames(NFI.Set.1.quant.tb), colnames(NFI.Set.1.qual.tb))), sort(colnames(select(NFI.Set.1.tb, -CLNR)))), true = 'check passed', false = 'check failed')
+```
+
+Check:
+```{r}
+if_else(identical(NFI.Set.1.quant.tb$BESTOBER, as.matrix(NFI.Set.1.quant.tb)[,'BESTOBER']), true = 'check passed', false = 'check failed')
+```
+
+### Hierarchical Clustering of the Variables
+
+```{r, out.extra='angle=90', fig.height = 13, fig.width = 13}
+NFI.Set.1.hclust.1 <- hclustvar(X.quanti = as.matrix(NFI.Set.1.quant.tb), X.quali = as.matrix(NFI.Set.1.qual.tb))
+
+plot(NFI.Set.1.hclust.1, cex = 0.5)
+```
+
+
+### Choose the Number of Clusters
+
+```{r, eval = FALSE}
+NFI.Set.1.hclust.1.stab <- stability(tree = NFI.Set.1.hclust.1, B = 1e3)
+```
+
+```{r, echo = FALSE}
+load('~/rwa/data/NFI/clustered_data/intermediate_workspaces/NFI.Set.1.Intermediate.v2.RData')
+```
+
+```{r, fig.width = 12, fig.height = 12}
+plot(NFI.Set.1.hclust.1.stab)
+```
+
+```{r, fig.width = 12, fig.height = 9}
+boxplot(NFI.Set.1.hclust.1.stab$matCR)
+abline(v = 35, col = 'blue', lty = 2)
+```
+
+P = 36 looks like the optimal choice
+
+```{r}
+NFI.Set.1.hclust.ct <- cutreevar(obj = NFI.Set.1.hclust.1, k = 36)
+```
+
+### Examine the Clusters
+
+#### Key to Variable Names
+
+Abbreviations for Tree Categories and species that are members of these categories:
+
+| Group | Member Species                                                                                 |
+|------:|-----------------------------------------------------------------------------------------------:|
+| AHORN | *Acer campestris*, *Acer platanoides*, *Acer pseudoplatanus* & *Acer opalus*                   |
+| ARVEN | *Pinus cembra*                                                                                 |
+| BUCHE | *Fagus sylvatica*                                                                              |
+| CASTA | *Castanea sativa*                                                                              |
+| CONIF | All Conifers                                                                                   |
+| DECID | All Broadleaf                                                                                  |
+| EICHE | *Quercus robur*, *Quercus petraea*, *Quercus pubescens*, *Quercus cerris* & *Quercus rubra*    |
+| ESCHE | *Fraxinus excelsior*, *Fraxinus ornus*                                                         |
+| FICHT | *Picea abies*                                                                                  |
+| FOEHR | *Pinus sylvestris*, *Pinus nigra*, *Pinus strobus*, *Pinus mugo arborea* & *Pinus spec.*       |
+| LARCH | *Larix decidua* & *Larix kaempferi*                                                            | 
+| TANNE | *Abies alba* & *Abies sp.*                                                                     |
+| UENDH | Other Conifers                                                                                 |
+| UELBH | Other Broadleaf                                                                                |
+
+```{r,echo = FALSE}
+Key.to.Var.Names.tb <- tribble(
+~Variable,             ~Explanation,
+'AHAUFEN'               , 'Heaps of branches Presence/Absence'                                        ,
+'AZOTYP'                , 'Vegetation Zonal/Azonal'                                                   ,
+'BAS_AHORN'             , 'extrapolated basal area of standing, live AHORN trees per ha'              ,
+'BAS_ALL'               , 'extrapolated basal area of all standing, live trees per ha'                ,
+'BAS_ARVEN'             , 'extrapolated basal area of standing, live ARVEN trees per ha'              ,               
+'BAS_BUCHE'             , 'extrapolated basal area of standing, live BUCHE trees per ha'              ,
+'BAS_CASTA'             , 'extrapolated basal area of standing, live CASTA trees per ha'              ,
+'BAS_CONIF'             , 'extrapolated basal area of standing, live CONIF trees per ha'              ,
+'BAS_EICHE'             , 'extrapolated basal area of standing, live EICHE trees per ha'              ,
+'BAS_ESCHE'             , 'extrapolated basal area of standing, live ESCHE trees per ha'              ,
+'BAS_FICHT'             , 'extrapolated basal area of standing, live FICHT trees per ha'              ,
+'BAS_FOEHR'             , 'extrapolated basal area of standing, live FOEHR trees per ha'              ,
+'BAS_LARCH'             , 'extrapolated basal area of standing, live LARCH trees per ha'              ,
+'BAS_TANNE'             , 'extrapolated basal area of standing, live TANNE trees per ha'              ,
+'BEERDG'                , 'Percentage Cover by Berry Bushes'                                          ,
+'BESTALT.AGEDOM'        , 'Estimate of the dominant age of trees'                                     ,
+'BESTOBER'              , 'Average height of the 100 tallest trees and shrubs per hectare'            ,
+'BODVEGDG'              , 'Percentage cover of ground vegetation'                                     ,
+'DDOM'                  , 'Dominant diameter at breast height of standing, live trees'                ,
+'DUERSTA'               , 'Presence/Absence Standing Dead Trees'                                      ,
+'GEWAESS'               , 'Presence/Absence of Flowing/Still Water'                                   ,
+'LAWI'                  , 'Presence/Absence of Traces of Avalanches'                                  ,
+'LUECKEN'               , 'Type (or Absence) of Gap in Forest'                                        ,
+'Mittelschicht'         , 'Coverage of Middle Layer of Forest'                                        ,
+'Oberschicht'           , 'Coverage of Upper Layer of Forest'                                         ,
+'Prct.Ahorn'            , 'Percentage Cover in Upper Layer of Forest by AHORN'                        ,
+'Prct.Arven'            , 'Percentage Cover in Upper Layer of Forest by ARVEN'                        ,
+'Prct.Buche'            , 'Percentage Cover in Upper Layer of Forest by BUCHE'                        ,
+'Prct.Casta'            , 'Percentage Cover in Upper Layer of Forest by CASTA'                        ,
+'Prct.Conif'            , 'Percentage Cover in Upper Layer of Forest by Conifers'                     ,
+'Prct.Decid'            , 'Percentage Cover in Upper Layer of Forest by Broadleaf trees'              ,
+'Prct.Eiche'            , 'Percentage Cover in Upper Layer of Forest by EICHE'                        ,
+'Prct.Esche'            , 'Percentage Cover in Upper Layer of Forest by ESCHE'                        ,
+'Prct.Ficht'            , 'Percentage Cover in Upper Layer of Forest by FICHT'                        ,
+'Prct.Foehr'            , 'Percentage Cover in Upper Layer of Forest by FOEHR'                        ,
+'Prct.Larch'            , 'Percentage Cover in Upper Layer of Forest by LARCH'                        ,
+'Prct.Tanne'            , 'Percentage Cover in Upper Layer of Forest by TANNE'                        ,
+'SCHLART.Mittelschicht' , 'Type of canopy closure of middle layer of forest'                          ,
+'SCHLART.Oberschicht'   , 'Type of canopy closure of upper layer of forest'                           ,
+'SCHLART.Unterschicht'  , 'Type of canopy closure of lower layer of forest'                           ,
+'SCHLUSSG'              , 'Type of Crown Closure'                                                     ,
+'SCHNLANG'              , 'Presence/Absence of traces of slow snowpack movement'                      ,
+'STOECKE'               , 'Presence/Absence of stumps and/or lying dead wood'                         ,
+'Stone.Struc'           , 'Presence/Absence of stone structures'                                      ,
+'STRADG'                , 'Percentage cover of shrub layer'                                           ,
+'STRUK'                 , 'Vertical structure of the stand'                                           ,
+'STZ_AHORN'             , 'extrapolated number of living AHORN trees per ha'                          ,
+'STZ_ALL'               , 'extrapolated number of living trees per ha'                                ,
+'STZ_ARVEN'             , 'extrapolated number of living ARVEN trees per ha'                          ,
+'STZ_BUCHE'             , 'extrapolated number of living BUCHE trees per ha'                          ,
+'STZ_CASTA'             , 'extrapolated number of living CASTA trees per ha'                          ,
+'STZ_CONIF'             , 'extrapolated number of living Coniferous trees per ha'                     ,
+'STZ_EICHE'             , 'extrapolated number of living EICHE trees per ha'                          ,
+'STZ_ESCHE'             , 'extrapolated number of living ESCHE trees per ha'                          ,
+'STZ_FICHT'             , 'extrapolated number of living FICHT trees per ha'                          ,
+'STZ_FOEHR'             , 'extrapolated number of living FOEHR trees per ha'                          ,
+'STZ_LARCH'             , 'extrapolated number of living LARCH trees per ha'                          ,
+'STZ_TANNE'             , 'extrapolated number of living TANNE trees per ha'                          ,
+'TOSTZ_AHORN'           , 'extrapolated number of dead AHORN trees per ha'                            ,
+'TOSTZ_ALL'             , 'extrapolated number of dead trees per ha'                                  , 
+'TOSTZ_ARVEN'           , 'extrapolated number of dead ARVEN trees per ha'                            ,
+'TOSTZ_BUCHE'           , 'extrapolated number of dead BUCHE trees per ha'                            ,
+'TOSTZ_CASTA'           , 'extrapolated number of dead CASTA trees per ha'                            , 
+'TOSTZ_CONIF'           , 'extrapolated number of dead Coniferous trees per ha'                       ,
+'TOSTZ_EICHE'           , 'extrapolated number of dead EICHE trees per ha'                            ,
+'TOSTZ_ESCHE'           , 'extrapolated number of dead ESCHE trees per ha'                            ,
+'TOSTZ_FICHT'           , 'extrapolated number of dead FICHT trees per ha'                            ,
+'TOSTZ_FOEHR'           , 'extrapolated number of dead FOEHR trees per ha'                            ,
+'TOSTZ_LARCH'           , 'extrapolated number of dead LARCH trees per ha'                            ,
+'TOSTZ_TANNE'           , 'extrapolated number of dead TANNE trees per ha'                            ,
+'TOV_AHORN'             , 'extrapolated volume of dead AHORN trees per hectare'                       ,
+'TOV_ALL'               , 'extrapolated volume of dead trees per hectare'                             ,
+'TOV_ARVEN'             , 'extrapolated volume of dead ARVEN trees per hectare'                       ,
+'TOV_BUCHE'             , 'extrapolated volume of dead BUCHE trees per hectare'                       ,
+'TOV_CASTA'             , 'extrapolated volume of dead CASTA trees per hectare'                       ,
+'TOV_CONIF'             , 'extrapolated volume of dead Coniferous trees per hectare'                  ,
+'TOV_EICHE'             , 'extrapolated volume of dead EICHE trees per hectare'                       ,
+'TOV_ESCHE'             , 'extrapolated volume of dead ESCHE trees per hectare'                       ,
+'TOV_FICHT'             , 'extrapolated volume of dead FICHT trees per hectare'                       ,
+'TOV_FOEHR'             , 'extrapolated volume of dead FOEHR trees per hectare'                       ,
+'TOV_LARCH'             , 'extrapolated volume of dead LARCH trees per hectare'                       ,
+'TOV_TANNE'             , 'extrapolated volume of dead TANNE trees per hectare'                       ,
+'Tracks'                , 'Presence/Absence of tracks'                                                ,
+'UEBERBEL'              , 'Presence/Absence of excessive ecological pressure/disturbances'            ,
+'Unterschicht'          , 'Coverage of Lower Layer of Forest'                                         ,
+'V_AHORN'               , 'extrapolated volume of live AHORN trees per hectare'                       ,
+'V_ALL'                 , 'extrapolated volume of live trees per hectare'                             ,
+'V_ARVEN'               , 'extrapolated volume of live ARVEN trees per hectare'                       ,
+'V_BUCHE'               , 'extrapolated volume of live BUCHE trees per hectare'                       ,
+'V_CASTA'               , 'extrapolated volume of live CASTA trees per hectare'                       ,
+'V_CONIF'               , 'extrapolated volume of live Coniferous trees per hectare'                  ,
+'V_EICHE'               , 'extrapolated volume of live EICHE trees per hectare'                       ,
+'V_ESCHE'               , 'extrapolated volume of live ESCHE trees per hectare'                       ,
+'V_FICHT'               , 'extrapolated volume of live FICHT trees per hectare'                       ,
+'V_FOEHR'               , 'extrapolated volume of live FOEHR trees per hectare'                       ,
+'V_LARCH'               , 'extrapolated volume of live LARCH trees per hectare'                       ,
+'V_TANNE'               , 'extrapolated volume of live TANNE trees per hectare'                       ,
+'VERJDG'                , 'Percentage of cover of regeneration'                                       ,
+'VORHERBA.HABART'       , 'Dominant tree species/group according to basal area'                       ,
+'VORHERNL.InFill'       , 'Dominant tree group according to basal area (Conifers/Broadleafs/Unknown)' ,
+'WARA'                  , 'Presence/Absence of Forest edge'                                           ,
+'WEID'                  , 'Presence/Absence of evidence of grazing by animals.'                       ,
+'WFRM'                  , 'Forest structure (form)'                                                   ,
+'WNWENTTXT'             , 'Forest / Scrub Forest'                                                     ,
+'WUTEAKT'               , 'Presence/Absence of Root Plates')                                           
+```
+
+```{r}
+NFI.Set.1.clust.membership <- NFI.Set.1.hclust.ct$cluster %>%
+  tibble(Variable = names(.), Cluster = .) %>%
+    arrange(Cluster) %>%
+      left_join(y = Key.to.Var.Names.tb, by = 'Variable') %>%
+        select(Cluster, Variable, Explanation)
+
+knitr::kable(NFI.Set.1.clust.membership)
+```
+
+I have written a function to plot the values of each of the explanatory variables in a cluster against the central synthetic variable that summarises the information in the cluster.
+Subplots are arranged by the squared loading metric of relatedness between the explanatory variable in the subplot and the central synthetic variable of the cluster.
+The source for this function is included at the end of this file as an Appendix.
+
+```{r}
+source('./functions/cmv.csv.R')
+```
+
+### NFI Set 1 Cluster 1
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 1) %>%
+  knitr::kable()
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c1.p.ls <- cmv.csv(csvn = 'cluster1',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c1.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c1.p.ls$num.var.plot
+```
+
+FICHT codes for *Picea abies* (Norway spruce).
+Thus the central synthetic variable of this cluster seems to summarise various metrics of the 'amount' of conifers in a plot and these conifers seem to mainly consider of Norway spruce in many plots.
+
+### NFI Set 1 Cluster 2
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 2) %>%
+  knitr::kable()
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c2.p.ls <- cmv.csv(csvn = 'cluster2',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s1.c2.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 6, fig.height = 6}
+nfi.s1.c2.p.ls$num.var.plot
+```
+
+**Broadleaf**:
+
+ * Ahorn = 'Acer sp.' (Maples)
+ * Buche = 'Fagus silvatica' (European Beech) 
+ * Casta = 'Castanea sativa'(Chestnut trees)
+ * Eiche = 'Quercus sp.'  (Oaks)
+ * Esche = 'Fraxinus sp.' (Ash trees)
+ * UELBH = Other Broadleaf
+
+**Conifers**:
+
+ * Arve   = 'Pinus cembra' (Stone Pine)
+ * Fichte = 'Picea sp.' (Spruce)
+ * Föhre  = 'Pinus sp.' (Other Pines)
+ * Lärche = 'Larix sp.' (Larch)
+ * Tanne  = 'Abies sp.' (Fir)
+ * UENDH  = Other Conifer
+
+Low values of the central synthetic variable of this cluster correspond to plots dominated by conifers whereas high values of this central synthetic variable correspond to plots dominated by broadleaf trees.
+
+### NFI Set 1 Cluster 3
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 3) %>%
+  knitr::kable()
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c3.p.ls <- cmv.csv(csvn = 'cluster3',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c3.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c3.p.ls$num.var.plot
+```
+
+The central synthetic variable for this cluster is negatively correlated with these metrics of the 'amount' of live maple in a plot.
+
+### NFI Set 1 Cluster 4
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 4) %>%
+  knitr::kable()
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c4.p.ls <- cmv.csv(csvn = 'cluster4',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c4.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c4.p.ls$num.var.plot
+```
+
+The central synthetic variable for this cluster is positively correlated with these metrics of the 'amount' of live Stone Pine (*Pinus cembra*) in a plot.
+
+### NFI Set 1 Cluster 5
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 5) %>%
+  knitr::kable()
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c5.p.ls <- cmv.csv(csvn = 'cluster5',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c5.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c5.p.ls$num.var.plot
+```
+The central synthetic variable for this cluster is negatively correlated with these metrics of the 'amount' of live European Beech (*Fagus sylvatica*) in a plot.
+
+### NFI Set 1 Cluster 6
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 6) %>%
+  knitr::kable()
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c6.p.ls <- cmv.csv(csvn = 'cluster6',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c6.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c6.p.ls$num.var.plot
+```
+
+The central synthetic variable for this cluster is positively correlated with these metrics of the 'amount' of live Chestnut (*Castanea sativa*) in a plot.
+
+### NFI Set 1 Cluster 7
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 7) %>%
+  knitr::kable()
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c7.p.ls <- cmv.csv(csvn = 'cluster7',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c7.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c7.p.ls$num.var.plot
+```
+
+The central synthetic variable for this cluster is positively correlated with these metrics of the 'amount' of live Oak in a plot.
+
+### NFI Set 1 Cluster 8
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 8) %>%
+  knitr::kable()
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c8.p.ls <- cmv.csv(csvn = 'cluster8',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c8.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c8.p.ls$num.var.plot
+```
+
+The central synthetic variable for this cluster is positively correlated with these metrics of the 'amount' of live Ash (*Fraxinus excelsior* and *Fraxinus ornus*) in a plot.
+
+### NFI Set 1 Cluster 9
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 9) %>%
+  knitr::kable()
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c9.p.ls <- cmv.csv(csvn = 'cluster9',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c9.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c9.p.ls$num.var.plot
+```
+
+The central synthetic variable for this cluster is negatively correlated with these metrics of the 'amount' of live Pines (other than Stone Pine) in a plot.
+
+### NFI Set 1 Cluster 10
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 10) %>%
+  knitr::kable()
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c10.p.ls <- cmv.csv(csvn = 'cluster10',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c10.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c10.p.ls$num.var.plot
+```
+
+The central synthetic variable for this cluster is positively correlated with these metrics of the 'amount' of live Larch (*Larix decidua* & *Larix kaempferi*) in a plot.
+
+### NFI Set 1 Cluster 11
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 11) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c11.p.ls <- cmv.csv(csvn = 'cluster11',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c11.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c11.p.ls$num.var.plot
+```
+
+The central synthetic variable for this cluster is positively correlated with these metrics of the 'amount' of live Fir (*Abies alba* & *Abies sp.*) in a plot.
+
+### NFI Set 1 Cluster 12
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 12) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c12.p.ls <- cmv.csv(csvn = 'cluster12',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c12.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 6, fig.height = 6}
+nfi.s1.c12.p.ls$num.var.plot
+```
+
+This cluster contains a single variable and thus the central synthetic variable for this cluster is perfectly correlated with this variable.
+In this situation the central synthetic variable is equivalent to the single variable that is a member of this cluster.
+
+### NFI Set 1 Cluster 13
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 13) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c13.p.ls <- cmv.csv(csvn = 'cluster13',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 6, fig.height = 6}
+nfi.s1.c13.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s1.c13.p.ls$num.var.plot
+```
+
+Lower values of the central synthetic variable of this cluster as associated with the absence of gaps in a the forest whereas higher values of this central synthetic variable are associated with various sorts of gaps in the forest.
+The central synthetic variable of this cluster is also negatively correlated with the percentage cover of the upper layer of the forest and positively correlated with the percentage cover of ground vegetation.
+Thus the central synthetic variable of this cluster can be considered to be a metric of openness in the upper layer of the forest (a more open upper layer allowing more sunlight through to the lower layer could account for the positive correlation with the percentage cover of ground vegetation).
+
+### NFI Set 1 Cluster 14
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 14) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c14.p.ls <- cmv.csv(csvn = 'cluster14',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c14.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c14.p.ls$num.var.plot
+```
+
+The positive correlation of these three variables with the central synthetic variable of this cluster makes it a measure of the coverage of the lower layer of the forest if we take lower here to refer generally to the lower layer, young regrowth (regeneration) and the shrub layer.
+
+
+### NFI Set 1 Cluster 15
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 15) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c15.p.ls <- cmv.csv(csvn = 'cluster15',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c15.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c15.p.ls$num.var.plot
+```
+
+The central synthetic variable of this cluster is positively correlated with the extrapolated densities of living trees, living conifers and living Norway Spruce (*Picea abies*).
+I interpret this to mean that conifers, in particular Norway Spruce, form a substantial fraction of the live trees in NFI plots.
+Thus I interpret the central synthetic variable of this cluster to be a measure of the density of live trees in NFI plots (of which many are conifers and many of these conifers are Norway Spruce).
+
+### NFI Set 1 Cluster 16
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 16) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c16.p.ls <- cmv.csv(csvn = 'cluster16',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c16.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c16.p.ls$num.var.plot
+```
+
+The central synthetic variable of this cluster is positively correlated with the extrapolated densities of dead trees, dead conifers and dead Norway Spruce (*Picea abies*).
+I interpret this to mean that conifers, in particular Norway Spruce, form a substantial fraction of the dead trees in NFI plots.
+Thus I interpret the central synthetic variable of this cluster to be a measure of the density of dead trees in NFI plots (of which many are conifers and many of these conifers are Norway Spruce).
+
+### NFI Set 1 Cluster 17
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 17) %>%
+  knitr::kable()
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c17.p.ls <- cmv.csv(csvn = 'cluster17',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c17.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s1.c17.p.ls$num.var.plot
+```
+
+These positive correlations suggest that the central synthetic variable of this cluster is serving as a measure of the density of dead Fir trees in NFI plots.
+
+### NFI Set 1 Cluster 18
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 18) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c18.p.ls <- cmv.csv(csvn = 'cluster18',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c18.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s1.c18.p.ls$num.var.plot
+```
+
+The positive correlations between these variables and the central synthetic variable suggest that the central synthetic variable of this cluster of variables is serving as a measure of the density of dead Pines (other than stone pine) in NFI plots.
+
+### NFI Set 1 Cluster 19
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 19) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c19.p.ls <- cmv.csv(csvn = 'cluster19',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c19.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s1.c19.p.ls$num.var.plot
+```
+
+The positive correlations between these variables and the central synthetic variable suggest that the central synthetic variable of this cluster of variables is serving as a measure of the density of dead Larch (*Larix decidua* & *Larix kaempferi*) in NFI plots.
+
+### NFI Set 1 Cluster 20
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 20) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c20.p.ls <- cmv.csv(csvn = 'cluster20',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c20.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s1.c20.p.ls$num.var.plot
+```
+
+The positive correlations between the variables in this cluster and the central synthetic variable of this cluster suggest that this the central synthetic variable is serving as a measure of the density of dead Stone Pine (*Pinus cembra*) in NFI plots.
+
+### NFI Set 1 Cluster 21
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 21) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c21.p.ls <- cmv.csv(csvn = 'cluster21',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c21.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s1.c21.p.ls$num.var.plot
+```
+
+The positive correlations between the variables in this cluster and the central synthetic variable of this cluster suggest that this the central synthetic variable is serving as a measure of the density of dead European Beech (*Fagus sylvatica*) in NFI plots.
+
+### NFI Set 1 Cluster 22
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 22) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c22.p.ls <- cmv.csv(csvn = 'cluster22',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c22.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s1.c22.p.ls$num.var.plot
+```
+
+The positive correlations between the variables in this cluster and the central synthetic variable of this cluster suggest that this central synthetic variable is serving as a measure of the density of dead Maples (*Acer sp.*) in NFI plots.
+
+### NFI Set 1 Cluster 23
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 23) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c23.p.ls <- cmv.csv(csvn = 'cluster23',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c23.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s1.c23.p.ls$num.var.plot
+```
+
+The positive correlations between the variables in this cluster and the central synthetic variable of this cluster suggest that this central synthetic variable is serving as a measure of the density of dead Ash (*Fraxinus excelsior* & *Fraxinus ornus*) in NFI plots.
+
+### NFI Set 1 Cluster 24
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 24) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c24.p.ls <- cmv.csv(csvn = 'cluster24',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c24.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s1.c24.p.ls$num.var.plot
+```
+
+The positive correlations between the variables in this cluster and the central synthetic variable of this cluster suggest that this central synthetic variable is serving as a measure of the density of dead Oak (*Quercus sp.*) in NFI plots.
+
+### NFI Set 1 Cluster 25
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 25) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c25.p.ls <- cmv.csv(csvn = 'cluster25',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c25.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s1.c25.p.ls$num.var.plot
+```
+
+The positive correlations between the variables in this cluster and the central synthetic variable of this cluster suggest that this central synthetic variable is serving as a measure of the density of dead Sweet Chestnut (*Castanea sativa*) in NFI plots.
+
+### NFI Set 1 Cluster 26
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 26) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c26.p.ls <- cmv.csv(csvn = 'cluster26',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c26.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c26.p.ls$num.var.plot
+```
+
+We would expect that the volume of live trees per hectare, the total basal area of live trees per hectare, the dominant diameter at breast height of live trees in the plots and the average height of the 100 tallest trees per hectare would all be correlated with the age of the dominant trees in the plot (especially since these estimates of densities per hectare are inferred from measurements of the trees in the plot).
+This is what we see with all of these variables being grouped into a single cluster.
+Consequently we can think of the central synthetic variable of this cluster as a measure of the age of the dominant trees in the plot and the related measurements of various aspects of their sizes/volumes described above.
+
+### NFI Set 1 Cluster 27
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 27) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c27.p.ls <- cmv.csv(csvn = 'cluster27',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c27.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c27.p.ls$num.var.plot
+```
+
+The positive correlations of the three variables in this cluster with the central synthetic variable for this cluster suggest that this central synthetic variable is describing the total volume of dead trees per hectare which, in the plots visited, are mostly conifers and that most of these conifers are Norway Spruce (*Picea abies*).
+
+
+### NFI Set 1 Cluster 28
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 28) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c28.p.ls <- cmv.csv(csvn = 'cluster28',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c28.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 6, fig.height = 6}
+nfi.s1.c28.p.ls$num.var.plot
+```
+
+This cluster contains a single variable and thus the central synthetic variable of this cluster can be considered a (scaled) equivalent of this single variable.
+
+### NFI Set 1 Cluster 29
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 29) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c29.p.ls <- cmv.csv(csvn = 'cluster29',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 18}
+nfi.s1.c29.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c29.p.ls$num.var.plot
+```
+
+The variables in this cluster are all descriptions of different aspects of forest structure.
+However within each of these variables the contrast in levels that dwarfs all other such contrasts, with respect to contributions to the central synthetic variable, is that between stocked and temporarily unstocked forest.
+Thus the central synthetic variable for this cluster is essentially quantifying whether the forest is stocked or temporarily unstocked.
+High values of this central synthetic variable correspond to plots with temporarily unstocked forest while low values of this central synthetic variable correspond to plots with stocked forest.
+Temporarily unstocked forest has very few large trees and thus the ground (and any low vegetation present) has the potential to receive substantially more sunlight than the ground and lower vegetation layer under stocked forest.
+
+### NFI Set 1 Cluster 30
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 30) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c30.p.ls <- cmv.csv(csvn = 'cluster30',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 6, fig.height = 6}
+nfi.s1.c30.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c30.p.ls$num.var.plot
+```
+
+This is another cluster that contains a single explanatory variable. Thus the values of the central synthetic variable for this cluster map directly to the values of this variable which codes for the presence or absence of root plates in a plot.  Low values of the central synthetic variable correspond to the absence of root place while high values of the central synthetic variable correspond to the presence of root plates.
+
+### NFI Set 1 Cluster 31
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 31) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c31.p.ls <- cmv.csv(csvn = 'cluster31',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s1.c31.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c31.p.ls$num.var.plot
+```
+
+Low values of the central synthetic variable for this cluster correspond to plots that are classed as normal forest whereas high values of this central synthetic variable correspond to plots that are classed as scrub forest.
+The distinction is not quite as clear for the other variable in this cluster.
+The lowest values of the central synthetic variable for this cluster correspond to plots that had stumps and/or lying dead wood present while higher values of the central synthetic variable typically correspond to plots from which stumps and lying dead wood were absent.
+
+### NFI Set 1 Cluster 32
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 32) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c32.p.ls <- cmv.csv(csvn = 'cluster32',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 6, fig.height = 6}
+nfi.s1.c32.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c32.p.ls$num.var.plot
+```
+
+This cluster contains a single explanatory variable.
+Thus low values of the central synthetic variable corresponded to plots which contained a section of forest edge whereas higher values of this central synthetic variable corresponded to plots which either lacked forest edge or lacked observations of this variable.
+
+### NFI Set 1 Cluster 33
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 33) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c33.p.ls <- cmv.csv(csvn = 'cluster33',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 6, fig.height = 6}
+nfi.s1.c33.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c33.p.ls$num.var.plot
+```
+
+This cluster contains a single explanatory variable.
+Consequently low values of the central synthetic variable for the cluster code for plots that lacked standing dead trees while high values of this central synthetic variable code for plots that contained standing dead trees.
+
+### NFI Set 1 Cluster 34
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 34) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c34.p.ls <- cmv.csv(csvn = 'cluster34',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 6, fig.height = 6}
+nfi.s1.c34.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c34.p.ls$num.var.plot
+```
+
+This cluster contains a single variable.
+Thus low values of the central synthetic variable for this cluster code for plots that lacked standing or flowing water while high values code for plots that contained standing or flowing water.
+
+### NFI Set 1 Cluster 35
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 35) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c35.p.ls <- cmv.csv(csvn = 'cluster35',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                   )
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s1.c35.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c35.p.ls$num.var.plot
+```
+
+This cluster contains two variable which quantify snow movement of very different velocities.
+Snow pack movement while much slower than avalanches still has the potential to damage or indeed complete remove the above ground section of ant nests.
+Low values of the central synthetic variable correspond to plots that experienced disturbance due to snowpack movements or avalanches (or both perhaps).
+High values of the central synthetic variable correspond to plots that lacked either or both of these sorts of disturbance.
+
+
+### NFI Set 1 Cluster 36
+
+```{r}
+filter(NFI.Set.1.clust.membership, Cluster == 36) %>%
+  knitr::kable()
+```
+
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c36.p.ls <- cmv.csv(csvn = 'cluster36',
+                          data = NFI.Set.1.tb,
+                          tree = NFI.Set.1.hclust.ct,
+                          data.description = 'NFI Set 1',
+                          facet.ncol = 2, 
+                          num.point.alpha = 0.05,
+                          box.point.alpha = 0.2
+                  )
+```
+
+```{r, fig.width = 6, fig.height = 6}
+nfi.s1.c36.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s1.c36.p.ls$num.var.plot
+```
+
+This cluster contains a single variable.
+Thus high values of the central synthetic variable correspond to plots with azonal vegetation whereas lower values of this central synthetic variable correspond to plots with zonal vegetation or plots that lacked a description of the vegetation zonality.
+
+## Extract the Synthetic Variables that Summarise the Information Contained by the Variables in NFI Set 1
+
+```{r}
+NFI.Set.1.CSV <- NFI.Set.1.hclust.ct$scores %>%
+  as_tibble() %>%
+    rename_all(.funs = function(x) {paste0('NFI.Set.1.', x)})
+```
+
+## Clustering All Descriptions of Plots that Quantify Human Disturbance
+
+### Read in the prepared NFI Interviews Data
+
+```{r}
+load('~/rwa/data/NFI/Prepared_Interviews_Data/NFI.Interviews.RData')
+```
+
+### Join on the variables from the prepared NFI Field data that quantify human disturbances 
+
+```{r}
+NFI.Set.2.tb <- select(NFI.Plot.Data, CLNR, AHAUFEN, Stone.Struc, Tracks, UEBERBEL, WEID, FLSCHADEN) %>%
+  left_join(y = NFI.Interviews.tb, by = 'CLNR')
+```
+
+To ensure the interpretability of the clusters created we supply related groups of explanatory variables to the clustering algorithm separately.
+
+### Group 1: Areal Damage
+
+```{r}
+Key.to.NFI.Set.2.Group.1.names.tb <- tribble(
+  ~Variable,  ~Meaning,
+  'FLSCHADEN'              , 'Presence/Absence of Areal Damage',
+  'FLSCHUMF.mr'            , 'Categories describing the occurrence and severity of areal damage',
+  'ysad.mr'                , 'Years since most recent areal damage',
+  'ZWANUANT'               , 'Estimated percentage of trees in the plot that have been removed in unplanned removals (salvage cuts) since NFI2',
+  'ZWANUURS.AGG'           , 'Categories describing the reasons for unplanned removals (salvage cuts)'
+)
+
+knitr::kable(Key.to.NFI.Set.2.Group.1.names.tb)
+```
+
+```{r}
+NFI.Set.2.Group.1.tb <- select(NFI.Set.2.tb, one_of(Key.to.NFI.Set.2.Group.1.names.tb$Variable))
+```
+
+```{r}
+NFI.Set.2.Group.1.quant.tb <- select_if(NFI.Set.2.Group.1.tb, is.numeric)
+```
+
+```{r}
+NFI.Set.2.Group.1.qual.tb <- select_if(NFI.Set.2.Group.1.tb, is.character)
+```
+
+
+#### Cluster the Data
+
+```{r, eval = FALSE}
+NFI.Set.2.Group.1.hclust.1 <- hclustvar(X.quanti = as.matrix(NFI.Set.2.Group.1.quant.tb), X.quali = as.matrix(NFI.Set.2.Group.1.qual.tb))
+```
+
+```{r, echo = FALSE}
+load('~/rwa/data/NFI/clustered_data/intermediate_workspaces/NFI.Set.2.Group.1.Intermediate.RData')
+```
+
+```{r, out.extra='angle=90', fig.width = 12, fig.height = 14}
+plot(NFI.Set.2.Group.1.hclust.1)
+```
+
+
+#### Choose the Number of Clusters into which to Group the Explanatory Variables
+
+```{r, eval = FALSE}
+NFI.Set.2.Group.1.hclust.1.stab <- stability(tree = NFI.Set.2.Group.1.hclust.1, B = 1e3)
+```
+
+```{r, fig.width = 12, fig.height = 9}
+boxplot(NFI.Set.2.Group.1.hclust.1.stab$matCR) 
+```
+
+Thus each clustering is equally stable across the bootstrap resamples of the data.
+Consequently I elect to use the higher level summary of these variables provided by grouping them into two clusters:
+
+```{r}
+NFI.Set.2.Group.1.hclust.ct <- cutreevar(obj = NFI.Set.2.Group.1.hclust.1, k = 2)
+```
+
+
+```{r}
+NFI.Set.2.Group.1.clust.membership <- NFI.Set.2.Group.1.hclust.ct$cluster %>%
+  tibble(Variable = names(.), Cluster = .) %>%
+    arrange(Cluster) %>%
+      left_join(y = Key.to.NFI.Set.2.Group.1.names.tb, by = 'Variable')
+
+knitr::kable(NFI.Set.2.Group.1.clust.membership)
+```
+
+#### Examine the Clusters
+
+#### Cluster 1
+
+```{r}
+filter(NFI.Set.2.Group.1.clust.membership, Cluster == 1) %>%
+  knitr::kable()
+```
+
+```{r}
+nfi.s2.g1.c1.p.ls <- cmv.csv(csvn = 'cluster1',
+                             data = NFI.Set.2.Group.1.tb,
+                             tree = NFI.Set.2.Group.1.hclust.ct,
+                             data.description = 'NFI Set 2 Group 1',
+                             facet.ncol = 2, 
+                             num.point.alpha = 0.05,
+                             box.point.alpha = 0.2
+                     )
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s2.g1.c1.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 6, fig.height = 6}
+nfi.s2.g1.c1.p.ls$num.var.plot
+```
+
+Thus high values of the central synthetic variable for this cluster correspond to the presence of areal damage in the plot and where present areal damage that occurred in the more recent past.
+Whereas low values of this central synthetic variable correspond to the absence of areal damage or areal damage that occurred in the more distant past.
+
+
+##### Cluster 2
+
+```{r}
+filter(NFI.Set.2.Group.1.clust.membership, Cluster == 2) %>%
+  knitr::kable()
+```
+
+```{r}
+nfi.s2.g1.c2.p.ls <- cmv.csv(csvn = 'cluster2',
+                             data = NFI.Set.2.Group.1.tb,
+                             tree = NFI.Set.2.Group.1.hclust.ct,
+                             data.description = 'NFI Set 2 Group 1',
+                             facet.ncol = 2, 
+                             num.point.alpha = 0.05,
+                             box.point.alpha = 0.2
+                     )
+```
+
+```{r, fig.width = 6, fig.height = 6}
+nfi.s2.g1.c2.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 6, fig.height = 6}
+nfi.s2.g1.c2.p.ls$num.var.plot
+```
+
+Thus high values of the central synthetic variable of this cluster correspond to the occurrence of salvage cuts and high percentages of trees in a plot being removed in these salvage cuts.
+Whereas the lowest values of the central synthetic variable of this cluster correspond to the absence of salvage cuts and consequently zero percent of the trees in a plot being removed in such a cut.
+
+### Group 2: Recreational Use of the Forest
+
+```{r}
+Key.to.NFI.Set.2.Group.2.names.tb <- tribble(
+  ~Variable,  ~Meaning,
+  'ERHAANDERE.ERHNUT'      , 'Field Survey: Presence/Absence of Recreational Use for Other activities (e.g. mushroom-picking, orienteering, mountain climbing).',
+  'ERHAANDERE.ERHNUTSUMF'  , 'Interviews:    Presence/Absence of Recreational Use for Other activities (e.g. mushroom-picking, orienteering, mountain climbing).',
+  'ERHABIKEN.ERHNUT'       , 'Field Survey: Presence/Absence of Recreational Use for Mountain biking.',
+  'ERHABIKEN.ERHNUTSUMF'   , 'Interviews:    Presence/Absence of Recreational Use for Mountain biking.',
+  'ERHAJOGG.ERHNUT'        , 'Field Survey: Presence/Absence of Recreational Use for Jogging.',
+  'ERHAJOGG.ERHNUTSUMF'    , 'Interviews:    Presence/Absence of Recreational Use for Jogging.',
+  'ERHALAGERN.ERHNUT'      , 'Field Survey: Presence/Absence of Recreational Use for Picnics, Camping, Cabins etc.',
+  'ERHALAGERN.ERHNUTSUMF'  , 'Interviews:    Presence/Absence of Recreational Use for Picnics, Camping, Cabins etc.',
+  'ERHARADFA.ERHNUT'       , 'Field Survey: Presence/Absence of Recreational Use for Bicycle Riding (as distinct from Mountain Biking).',
+  'ERHARADFA.ERHNUTSUMF'   , 'Interviews:    Presence/Absence of Recreational Use for Bicycle Riding (as distinct from Mountain Biking).',
+  'ERHAREITEN.ERHNUT'      , 'Field Survey: Presence/Absence of Recreational Use for Horse Riding',
+  'ERHAREITEN.ERHNUTSUMF'  , 'Interviews:    Presence/Absence of Recreational Use for Horse Riding',
+  'ERHASCHNEEWA.ERHNUT'    , 'Field Survey: Presence/Absence of Recreational Use for Snowshoeing ',
+  'ERHASCHNEEWA.ERHNUTSUMF', 'Interviews:    Presence/Absence of Recreational Use for Snowshoeing ',
+  'ERHASKIBORD.ERHNUT'     , 'Field Survey: Presence/Absence of Recreational Use for Skiing and snowboarding (including transport facilities)',
+  'ERHASKIBORD.ERHNUTSUMF' , 'Interviews:    Presence/Absence of Recreational Use for Skiing and snowboarding (including transport facilities)',
+  'ERHASKILANG.ERHNUT'     , 'Field Survey: Presence/Absence of Recreational Use for Cross-country skiing',
+  'ERHASKILANG.ERHNUTSUMF' , 'Interviews:    Presence/Absence of Recreational Use for Cross-country skiing',
+  'ERHASPAZ.ERHNUT'        , 'Field Survey: Presence/Absence of Recreational Use for Walking',
+  'ERHASPAZ.ERHNUTSUMF'    , 'Interviews:    Presence/Absence of Recreational Use for Walking',
+  'ERHAWANDER.ERHNUT'      , 'Field Survey: Presence/Absence of Recreational Use for Hiking (including transport facilities).',
+  'ERHAWANDER.ERHNUTSUMF'  , 'Interviews:    Presence/Absence of Recreational Use for Hiking (including transport facilities).',
+  'ERHNUTINTUMF.num'       , 'Intensity of current recreational use estimated number of visitors per year')
+
+knitr::kable(Key.to.NFI.Set.2.Group.2.names.tb)
+```
+
+```{r}
+NFI.Set.2.Group.2.tb <- select(NFI.Set.2.tb, one_of(Key.to.NFI.Set.2.Group.2.names.tb$Variable))
+```
+
+```{r}
+NFI.Set.2.Group.2.quant.tb <- select_if(NFI.Set.2.Group.2.tb, is.numeric)
+```
+
+```{r}
+NFI.Set.2.Group.2.qual.tb <- select_if(NFI.Set.2.Group.2.tb, is.character)
+```
+
+#### Cluster the Data
+
+```{r, eval = FALSE}
+NFI.Set.2.Group.2.hclust.1 <- hclustvar(X.quanti = as.matrix(NFI.Set.2.Group.2.quant.tb), X.quali = as.matrix(NFI.Set.2.Group.2.qual.tb))
+```
+
+```{r, echo = FALSE}
+load('~/rwa/data/NFI/clustered_data/intermediate_workspaces/NFI.Set.2.Group.2.Intermediate.RData')
+```
+
+```{r, out.extra='angle=90', fig.width = 12, fig.height = 14}
+plot(NFI.Set.2.Group.2.hclust.1, cex = 0.5)
+```
+
+#### Choose the Number of Clusters into which to Group the Explanatory Variables
+
+```{r, eval = FALSE}
+NFI.Set.2.Group.2.hclust.1.stab <- stability(tree = NFI.Set.2.Group.2.hclust.1, B = 1e3)
+```
+
+```{r, fig.width = 12, fig.height = 9}
+boxplot(NFI.Set.2.Group.2.hclust.1.stab$matCR) 
+```     
+
+Thus a two cluster partition of the data is the most stable across the bootstrap resamples of the data.
+
+```{r}
+NFI.Set.2.Group.2.hclust.ct <- cutreevar(obj = NFI.Set.2.Group.2.hclust.1, k = 2)
+```
+
+```{r}
+NFI.Set.2.Group.2.clust.membership <- NFI.Set.2.Group.2.hclust.ct$cluster %>%
+  tibble(Variable = names(.), Cluster = .) %>%
+    arrange(Cluster) %>%
+      left_join(y = Key.to.NFI.Set.2.Group.2.names.tb, by = 'Variable')
+
+knitr::kable(NFI.Set.2.Group.2.clust.membership)
+```
+
+#### Examine the Clusters
+
+#### Cluster 1
+
+```{r}
+filter(NFI.Set.2.Group.2.clust.membership, Cluster == 1) %>%
+  knitr::kable()
+```
+
+```{r}
+nfi.s2.g2.c1.p.ls <- cmv.csv(csvn = 'cluster1',
+                             data = NFI.Set.2.Group.2.tb,
+                             tree = NFI.Set.2.Group.2.hclust.ct,
+                             data.description = 'NFI Set 2 Group 2',
+                             facet.ncol = 2, 
+                             num.point.alpha = 0.05,
+                             box.point.alpha = 0.2
+                     )
+```
+
+```{r, fig.width = 12, fig.height = 32}
+nfi.s2.g2.c1.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s2.g2.c1.p.ls$num.var.plot
+```
+
+Thus high values of the central synthetic variable of this cluster generally correspond the presence of evidence of one or more of the above recreational uses of the forest. 
+All of these recreational uses of the forest share the common characteristic of not being winter sports.
+The correlation of the central synthetic variable for this cluster with the estimated number of recreational visitors per year is comparatively weak.
+
+#### Cluster 2
+
+```{r}
+filter(NFI.Set.2.Group.2.clust.membership, Cluster == 2) %>%
+  knitr::kable()
+```
+
+```{r}
+nfi.s2.g2.c2.p.ls <- cmv.csv(csvn = 'cluster2',
+                             data = NFI.Set.2.Group.2.tb,
+                             tree = NFI.Set.2.Group.2.hclust.ct,
+                             data.description = 'NFI Set 2 Group 2',
+                             facet.ncol = 2, 
+                             num.point.alpha = 0.05,
+                             box.point.alpha = 0.2
+                     )
+```
+
+```{r, fig.width = 12, fig.height = 18}
+nfi.s2.g2.c2.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s2.g2.c2.p.ls$num.var.plot
+```
+
+Thus high values of the central synthetic variable of this cluster generally correspond the presence of evidence of one or more of the above winter sports related uses of the forest.
+
+
+### Group 3: Non-recreational Use of the Forest
+
+```{r, echo = FALSE}
+Key.to.NFI.Set.2.Group.3.names.tb <- tribble(
+  ~Variable,  ~Meaning,
+  'AHAUFEN'                , 'Heaps of branches Presence/Absence',
+  'ERNTART.Agg.Cat'        , 'Types of equipment (tools, machines, etc.) that have been used to harvest timber from at a plot.',
+  'ERSKONZ.TXT'            , 'Category of Transport access to the unit of forest in which the plot is situated',
+  'Stone.Struc'            , 'Presence/Absence of stone structures in the plot',
+  'Tracks'                 , 'Presence/Absence of tracks',
+  'UEBERBEL'               , 'Presence/Absence of excessive ecological pressure/disturbances',
+  'WEID'                   , 'Presence/Absence of evidence of grazing by animals.',
+  'yslst'                  , 'Year since most recent silvicultural treatment'
+)
+
+knitr::kable(Key.to.NFI.Set.2.Group.3.names.tb)
+```
+
+```{r}
+NFI.Set.2.Group.3.tb <- select(NFI.Set.2.tb, one_of(Key.to.NFI.Set.2.Group.3.names.tb$Variable))
+```
+
+```{r}
+NFI.Set.2.Group.3.quant.tb <- select_if(NFI.Set.2.Group.3.tb, is.numeric)
+```
+
+```{r}
+NFI.Set.2.Group.3.qual.tb <- select_if(NFI.Set.2.Group.3.tb, is.character)
+```
+
+#### Cluster the Data
+
+```{r, eval = FALSE}
+NFI.Set.2.Group.3.hclust.1 <- hclustvar(X.quanti = as.matrix(NFI.Set.2.Group.3.quant.tb), X.quali = as.matrix(NFI.Set.2.Group.3.qual.tb))
+```
+
+```{r, echo = FALSE}
+load('~/rwa/data/NFI/clustered_data/intermediate_workspaces/NFI.Set.2.Group.3.Intermediate.RData')
+```
+
+```{r, out.extra='angle=90', fig.width = 12, fig.height = 14}
+plot(NFI.Set.2.Group.3.hclust.1)
+```
+
+#### Choose the Number of Clusters into which to Group the Explanatory Variables
+
+```{r, eval = FALSE}
+NFI.Set.2.Group.3.hclust.1.stab <- stability(tree = NFI.Set.2.Group.3.hclust.1, B = 1e3)
+```
+
+```{r, fig.width = 12, fig.height = 9}
+boxplot(NFI.Set.2.Group.3.hclust.1.stab$matCR) 
+```
+
+The stability of each of the divisions of the data into different numbers of clusters essentially does not change with the number of clusters used.
+Consequently I am choosing to use the clustering of these variables into four clusters because these clusters are straightforward to interpret.
+
+```{r}
+NFI.Set.2.Group.3.hclust.ct <- cutreevar(obj = NFI.Set.2.Group.3.hclust.1, k = 4)
+```
+
+```{r}
+NFI.Set.2.Group.3.clust.membership <- NFI.Set.2.Group.3.hclust.ct$cluster %>%
+  tibble(Variable = names(.), Cluster = .) %>%
+    arrange(Cluster) %>%
+      left_join(y = Key.to.NFI.Set.2.Group.3.names.tb, by = 'Variable')
+
+knitr::kable(NFI.Set.2.Group.3.clust.membership)
+```
+
+#### Examine the Clusters
+
+#### Cluster 1
+
+```{r}
+filter(NFI.Set.2.Group.3.clust.membership, Cluster == 1) %>%
+  knitr::kable()
+```
+
+```{r}
+nfi.s2.g3.c1.p.ls <- cmv.csv(csvn = 'cluster1',
+                             data = NFI.Set.2.Group.3.tb,
+                             tree = NFI.Set.2.Group.3.hclust.ct,
+                             data.description = 'NFI Set 2 Group 3',
+                             facet.ncol = 2, 
+                             num.point.alpha = 0.05,
+                             box.point.alpha = 0.2
+                     )
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s2.g3.c1.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s2.g3.c1.p.ls$num.var.plot
+```
+
+Lower values of the central synthetic variable correspond to forestry harvest and access methods that would involve more intense habitat disturbance for ants.
+Whereas larger values of the central synthetic variable correspond to forestry harvest and access methods that would involve less intense habitat disturbance for ants.
+Extraction by helicopter of timber felled by chainsaw involves far less ant habitat disturbance than felling timber then either dragging it out of the plot or processing it in the plot.
+Similarly the plots that are accessed only by helicopter or not at all would experience far less ant habitat disturbance than the plots serviced by skidding roads and tracks or cable cranes.
+The central synthetic variable of this cluster is also positively correlated with the number of years that have elapsed since the most recent silvicultural treatment.
+Thus lower values of this central synthetic variable are associate with more recent disturbances while higher values are associated with disturbances that occurred in the more distant past.
+
+#### Cluster 2
+
+```{r}
+filter(NFI.Set.2.Group.3.clust.membership, Cluster == 2) %>%
+  knitr::kable()
+```
+
+```{r}
+nfi.s2.g3.c2.p.ls <- cmv.csv(csvn = 'cluster2',
+                             data = NFI.Set.2.Group.3.tb,
+                             tree = NFI.Set.2.Group.3.hclust.ct,
+                             data.description = 'NFI Set 2 Group 3',
+                             facet.ncol = 2, 
+                             num.point.alpha = 0.05,
+                             box.point.alpha = 0.2
+                     )
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s2.g3.c2.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s2.g3.c2.p.ls$num.var.plot
+```
+
+Thus higher values of the central synthetic variable for this cluster are typically associated with the presence of heaps of branches and or the presence of vehicle tracks or skidding tracks (that result from felled trees being dragged out of a plot along the ground).
+Whereas lower values of this central synthetic variable are typically associated with the absence of these heaps of branches and or tracks of these types.
+
+#### Cluster 3
+
+```{r}
+filter(NFI.Set.2.Group.3.clust.membership, Cluster == 3) %>%
+  knitr::kable()
+```
+
+```{r}
+nfi.s2.g3.c3.p.ls <- cmv.csv(csvn = 'cluster3',
+                             data = NFI.Set.2.Group.3.tb,
+                             tree = NFI.Set.2.Group.3.hclust.ct,
+                             data.description = 'NFI Set 2 Group 3',
+                             facet.ncol = 2, 
+                             num.point.alpha = 0.05,
+                             box.point.alpha = 0.2
+                     )
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s2.g3.c3.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s2.g3.c3.p.ls$num.var.plot
+```
+
+Thus higher values of the central synthetic variable for this cluster are typically associated with the presence of stone structures in the plot and or evidence of grazing by vertebrates in the plot whereas lower values of this central synthetic variable are typically associated with the absence of the either or both of these factors.
+
+#### Cluster 4
+
+```{r}
+filter(NFI.Set.2.Group.3.clust.membership, Cluster == 4) %>%
+  knitr::kable()
+```
+
+```{r}
+nfi.s2.g3.c4.p.ls <- cmv.csv(csvn = 'cluster4',
+                             data = NFI.Set.2.Group.3.tb,
+                             tree = NFI.Set.2.Group.3.hclust.ct,
+                             data.description = 'NFI Set 2 Group 3',
+                             facet.ncol = 2, 
+                             num.point.alpha = 0.05,
+                             box.point.alpha = 0.2
+                     )
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s2.g3.c4.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s2.g3.c4.p.ls$num.var.plot
+```
+
+This cluster consists of a single explanatory variable and thus low values of the central synthetic variable correspond the absence of excessive ecological pressure or disturbance and high values of this central synthetic variable correspond to the presence of excessive ecological pressure or disturbance.
+
+### Group 4
+
+```{r, echo = FALSE}
+Key.to.NFI.Set.2.Group.4.names.tb <- tribble(
+  ~Variable,  ~Meaning,
+  'BESTEVOLUMF.cat'        , 'Type of stand origin',
+  'WAFKTVOR4.Agg.Cat'      , 'Categories describing the use of the forest in which the plot is situated',
+  'WALDENTUMF.cat'         , 'Categories describing the origin of the forest in which the plot is situated'
+)
+
+knitr::kable(Key.to.NFI.Set.2.Group.4.names.tb)
+```
+
+```{r}
+NFI.Set.2.Group.4.tb <- select(NFI.Set.2.tb, one_of(Key.to.NFI.Set.2.Group.4.names.tb$Variable))
+```
+
+```{r}
+NFI.Set.2.Group.4.quant.tb <- select_if(NFI.Set.2.Group.4.tb, is.numeric)
+
+NFI.Set.2.Group.4.quant.tb
+```
+
+There are no numeric variables in this cluster.
+
+```{r}
+NFI.Set.2.Group.4.qual.tb <- select_if(NFI.Set.2.Group.4.tb, is.character)
+```
+
+#### Cluster the Data
+
+```{r, eval = FALSE}
+NFI.Set.2.Group.4.hclust.1 <- hclustvar(X.quali = as.matrix(NFI.Set.2.Group.4.qual.tb))
+```
+
+```{r}
+load('~/rwa/data/NFI/clustered_data/intermediate_workspaces/NFI.Set.2.Group.4.Intermediate.RData')
+```
+
+```{r, out.extra='angle=90', fig.width = 12, fig.height = 6}
+plot(NFI.Set.2.Group.4.hclust.1)
+```
+
+#### Choose the Number of Clusters into which to Group the Explanatory Variables
+
+```{r, eval = FALSE}
+NFI.Set.2.Group.4.hclust.1.stab <- stability(tree = NFI.Set.2.Group.4.hclust.1, B = 1e3)
+```
+
+```{r, fig.width = 12, fig.height = 9}
+boxplot(NFI.Set.2.Group.4.hclust.1.stab$matCR) 
+```
+
+Thus grouping these three variables into a single cluster is advisable.
+
+```{r}
+NFI.Set.2.Group.4.hclust.ct <- cutreevar(obj = NFI.Set.2.Group.4.hclust.1, k = 1)
+```
+
+```{r}
+NFI.Set.2.Group.4.clust.membership <- NFI.Set.2.Group.4.hclust.ct$cluster %>%
+  tibble(Variable = names(.), Cluster = .) %>%
+    arrange(Cluster) %>%
+      left_join(y = Key.to.NFI.Set.2.Group.4.names.tb, by = 'Variable')
+
+knitr::kable(NFI.Set.2.Group.4.clust.membership)
+```
+
+#### Examine the Clusters
+
+#### Cluster 1
+
+```{r}
+filter(NFI.Set.2.Group.4.clust.membership, Cluster == 1) %>%
+  knitr::kable()
+```
+
+```{r}
+nfi.s2.g4.c1.p.ls <- cmv.csv(csvn = 'cluster1',
+                             data = NFI.Set.2.Group.4.tb,
+                             tree = NFI.Set.2.Group.4.hclust.ct,
+                             data.description = 'NFI Set 2 Group 4',
+                             facet.ncol = 2, 
+                             num.point.alpha = 0.05,
+                             box.point.alpha = 0.2
+                     )
+```
+
+```{r, fig.width = 12, fig.height = 12}
+nfi.s2.g4.c1.p.ls$cat.var.plot
+```
+
+```{r, fig.width = 12, fig.height = 6}
+nfi.s2.g4.c1.p.ls$num.var.plot
+```
+
+Thus plots in forest of artificial or mixed (natural and artificial) origins are associated with high values of the central synthetic variable of this cluster.
+Whereas, plots in forest of natural or unknown origin (i.e. where there was no clear evidence of regeneration), forest that has regenerated naturally or old forest are associated with lower values of this central synthetic variable.
+The forest use types of Recreation/Military and Wood production are associated with higher values of the central synthetic variable of this cluster.
+Whereas all other forest use categories are associated with lower values of this central synthetic variable.
+However none of the forest use categories are typically associated with values of the central synthetic variable that are as high as the values that are typically associated with forests of artificial or mixed origin.
+Rather these highest values of the central synthetic variable that are associated with such artificial or mixed origin forests are spread among forest use categories as outliers to the majority of the values associated with these categories.
+
+Check:
+
+```{r}
+select(NFI.Set.2.tb, -CLNR) %>%
+  colnames() %in% c(colnames(NFI.Set.2.Group.1.tb), colnames(NFI.Set.2.Group.2.tb), colnames(NFI.Set.2.Group.3.tb), colnames(NFI.Set.2.Group.4.tb))  %>%
+    summary()
+```
+
+## Collating the Central Synthetic Variables from Each Set of Clustered Data 
+
+```{r}
+NFI.Set.1.CSV <- NFI.Set.1.hclust.ct$scores %>%
+  as_tibble() %>%
+    rename_all(.funs = function(x){paste0('NFI.S1.', str_replace(string = x, pattern = 'cluster', replacement = 'C'))})    
+```
+
+```{r}
+NFI.Set.2.Group.1.CSV <- NFI.Set.2.Group.1.hclust.ct$scores %>%
+  as_tibble() %>%
+    rename_all(.funs = function(x){paste0('NFI.S2.G1.', str_replace(string = x, pattern = 'cluster', replacement = 'C'))})   
+```
+
+```{r}
+NFI.Set.2.Group.2.CSV <- NFI.Set.2.Group.2.hclust.ct$scores %>%
+  as_tibble() %>%
+    rename_all(.funs = function(x){paste0('NFI.S2.G2.', str_replace(string = x, pattern = 'cluster', replacement = 'C'))})   
+```
+
+```{r}
+NFI.Set.2.Group.3.CSV <- NFI.Set.2.Group.3.hclust.ct$scores %>%
+  as_tibble() %>%
+    rename_all(.funs = function(x){paste0('NFI.S2.G3.', str_replace(string = x, pattern = 'cluster', replacement = 'C'))})   
+```
+
+```{r}
+NFI.Set.2.Group.4.CSV <- NFI.Set.2.Group.4.hclust.ct$scores %>%
+  as_tibble() %>%
+    rename_all(.funs = function(x){paste0('NFI.S2.G4.', str_replace(string = x, pattern = 'cluster', replacement = 'C'))})    
+```
+
+
+```{r}
+NFI.CSV.tb <- reduce(.x = list(NFI.Set.1.CSV, NFI.Set.2.Group.1.CSV, NFI.Set.2.Group.2.CSV, NFI.Set.2.Group.3.CSV, NFI.Set.2.Group.4.CSV), .f = bind_cols)
+
+colnames(NFI.CSV.tb)
+```
+
+## Examining the Synthetic Variables that Summarise the Information contained in the Variables from NFI Sets 1 & 2
+
+```{r, fig.width = 9, fig.height = 9}
+cor(NFI.CSV.tb) %>%
+  heatmaply(colors = PRGn, limits = c(-1,1), margins = c(120,120), column_text_angle = 90, fontsize_row = 6, fontsize_col = 6)
+```
+
+```{r}
+findCorrelation(x = cor(NFI.CSV.tb), cutoff = 0.7)
+```
+
+Thus the strongest correlations among these synthetic variables have correlation coefficients with magnitudes less than 0.7 and there is no cause for concern on this count.
+
+```{r}
+findLinearCombos(NFI.CSV.tb)
+```
+Thus none of these synthetic variables are linear combinations of others.
+
+The default setting of the `caret` function `nearZeroVar` is to warn about variables where the ratio of the most common to the next most common values is 95:5 or higher.
+The class imbalance in our response variable is approximately 22 absences for each presence.
+I believe it will be of interest to show the relative contributions of the full set of these synthetic variables to the predictive performance of any classifier trained to predict ant occurrence.
+Our planned classifier, a random forest, will not be adversely affected by the presence of potential explanatory variables with low variances.
+Consequently in the interested of interpretability I will not discard any of these synthetic variables with low variances at this stage.
+However, it would be surprising if any of these synthetic variables with low variances prove particularly useful in the final random forest.
+
+```{r}
+nearZeroVar(NFI.CSV.tb, names = TRUE, freqCut = 95/1)
+```
+
+Bind on the Plot Identifiers from the `CLNR` column:
+
+```{r} 
+NFI.CSV.tb <- select(NFI.Plot.Data, CLNR) %>%
+  bind_cols(NFI.CSV.tb)
+```
+
+```{r}
+ncol(NFI.Interviews.tb) + ncol(NFI.Plot.Data) - 2
+```
+
+```{r}
+ncol(NFI.CSV.tb) - 1
+```
+
+Thus I have summarised the 139 explanatory variables prepared from the NFI field and interviews data with 45 synthetic variables.
+Each synthetic variable summarises the information contained in a closely related group of explanatory variables.
+
+## Write out the prepared data
+
+```{r, eval = FALSE}
+save(list = 'NFI.CSV.tb', file = '~/rwa/data/clustered_data/clustered_NFI_data/NFI.CSV.RData')
+```
+
+# Clustering the Terrain Data 
+
+### Load the Digital Elevation Model derived variables
+
+```{r}
+load('~/rwa/data/dtm_buffer_summaries/Prepared_DTM_Buffer_Summaries/dem.bs.tb.RData')
+```
+
+## Clustering the 12m Variables
+
+### Extract the Variables that are summary statistics of the pixel values of the DEM products in the central 12.5m disk buffers
+
+```{r}
+dem.12m.vars.names <- select(dem.bs.tb, -CLNR) %>%
+                        colnames() %>%
+                          str_subset(pattern = '12m')
+
+dem.12m.tb <- select(dem.bs.tb, dem.12m.vars.names)
+
+ncol(dem.12m.tb)
+```
+
+### Check for variable with variances close to zero
+
+```{r}
+near.zero.variance.variables.12m <- nearZeroVar(x = as.matrix(dem.12m.tb), names = TRUE)
+
+select(dem.12m.tb, near.zero.variance.variables.12m) %>%
+  summary()
+
+ggplot(data = dem.12m.tb, aes(x = cellBal_D8_median_12m)) +
+  geom_histogram()
+```
+
+### thus we can see that we will loose very little information by discarding `cellBal_D8_median_12m`
+
+```{r}
+dem.12m.F1.tb <- select(.data = dem.12m.tb, -one_of(near.zero.variance.variables.12m))
+
+ncol(dem.12m.tb) - ncol(dem.12m.F1.tb)
+
+near.zero.variance.variables.12m %in% colnames(dem.12m.F1.tb)
+```
+
+### Check for linear dependencies among the explanatory variables
+
+```{r}
+findLinearCombos(x = as.matrix(dem.12m.F1.tb))
+```
+
+#### thus there are none
+
+
+### Plot the correlation matrix
+
+```{r, fig.height = 12, fig.width = 12}
+heatmaply(cor(x = as.matrix(dem.12m.F1.tb)),
+          colors = PRGn, limits = c(-1,1), margins = c(120,120),
+          column_text_angle = 90, fontsize_row = 6, fontsize_col = 6)
+```
+
+### strongly related groups of variables exist among these data so clustering related variables and summarising these clusters with a central synthetic variable seems a good approach
+
+####
+
+```{r, eval = FALSE}
+system.time(dem.12m.hclust <- hclustvar(X.quanti = as.matrix(dem.12m.F1.tb))) # ~ 36 sec
+
+system.time(dem.12m.hclust.stab <- stability(tree = dem.12m.hclust, B = 100, graph = TRUE)) # ~103 mins
+```
+
+```{r, eval = FALSE}
+save(list = c('dem.12m.hclust', 'dem.12m.hclust.stab'), file = '~/rwa/data/clustered_data/intermediate_workspaces/dem_12m_hclust.RData')
+```
+
+```{r}
+load('~/rwa/data/clustered_data/intermediate_workspaces/dem_12m_hclust.RData')
+```
+
+```{r, fig.height = 13, fig.width = 13}
+plot(dem.12m.hclust)
+```
+
+```{r, fig.width = 12, fig.height = 9}
+boxplot(dem.12m.hclust.stab$matCR)
+
+abline(v = 67-1, col = 'blue', lty = 2)
+```
+
+```{r}
+dem.12m.hclust.ct <- cutreevar(obj = dem.12m.hclust, k = 67)
+```
+
+### Examine the Clusters
+
+#### Create a key to the variable names
+
+```{r}
+Key.A.tb <- tribble(
+~`Acronym Component A` , ~`DEM Product`,
+'cellBal_D8'         , 'Cell Balance',
+'curv_plan'          , 'Plan Curvature',
+'curv_prof'          , 'Profile Curvature',
+'dem_5m_clip_master' , 'Elevation',
+'dissection3x3'      , 'Martonne’s Modified Dissection',
+'eastness'           , 'Eastnest',
+'flowAcc_MF'         , 'Flow Accumulation',
+'globalRad_5m'      , 'Global Potential Radiation',
+'heatload'           , 'Heatload',
+'mass_bal_index'     , 'Mass Balance Index',
+'melton_rug'         , 'Melton Ruggedness Number',
+'moisture_index'     , 'Integrated Moisture Index',
+'northness'          , 'Northness',
+'roughness3x3'       , 'Roughness',
+'site_exp'           , 'Site Exposure',
+'slpM0'              , 'Slope',
+'tpi0_12'            , 'Topographic Position Index',
+'TWI_SAGA'           , 'Topographic Wetness Index',
+'valleydepth'        , 'Valley Depth')
+
+Key.B.tb <- tribble(
+ ~`Acronym Component B`, ~`Summary Statistic`,
+ 'min'       , 'Minimum',            
+ 'q25'       , 'First quartile',     
+ 'mean'      , 'Mean',               
+ 'median'    , 'Median',             
+ 'q75'       , 'Third quartile',     
+ 'max'       , 'Maximum',            
+ 'std'       , 'Standard Deviation', 
+ 'Morans_I'  , 'Moran\'s I'           
+)
+```
+
+```{r}
+dem.12m.vars.names
+```
+
+```{r}
+Full.Key.tb <- crossing(pull(Key.A.tb, `Acronym Component A`),
+           pull(Key.B.tb, `Acronym Component B`)
+  ) %>%
+    rename_all(.funs = function(x){str_extract(string = x, pattern = 'Acronym Component [:alpha:]')}) %>%
+      left_join(y = Key.A.tb, by  = 'Acronym Component A') %>% 
+        left_join(y = Key.B.tb, by  = 'Acronym Component B') %>%
+          mutate(Variable = glue('{`Acronym Component A`}_{`Acronym Component B`}_12m') %>% as.character())
+```
+
+# Check :
+
+```{r}
+dem.12m.vars.names %in% pull(Full.Key.tb, Variable) %>% summary()
+
+Clust.Key.tb <- tibble(Variable = names(dem.12m.hclust.ct$cluster), Cluster = dem.12m.hclust.ct$cluster) %>%
+  arrange(Cluster) %>%
+    left_join(y = Full.Key.tb, by = 'Variable') %>%
+        select(Cluster, Variable, `Summary Statistic`, `DEM Product`)
+
+knitr::kable(Clust.Key.tb)
+```
+
+### Cluster 1
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster == 1 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster1
+```
+
+### Cluster   2
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==    2 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster2
+```
+
+### Cluster   3
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==    3 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster3
+```
+
+### Cluster   4
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==    4 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster4
+```
+
+### Cluster   5
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==    5 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster5
+```
+
+### Cluster   6
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==    6 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster6
+```
+
+### Cluster   7
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==    7 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster7
+```
+
+### Cluster   8
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==    8 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster8
+```
+
+### Cluster   9
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==    9 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster9
+```
+
+### Cluster  10
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   10 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster10
+```
+
+### Cluster  11
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   11 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster11
+```
+
+### Cluster  12
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   12 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster12
+```
+
+### Cluster  13
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   13 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster13
+```
+
+### Cluster  14
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   14 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster14
+```
+
+### Cluster  15
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   15 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster15
+```
+
+### Cluster  16
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   16 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster16
+```
+
+### Cluster  17
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   17 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster17
+```
+
+### Cluster  18
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   18 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster18
+```
+
+### Cluster  19
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   19 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster19
+```
+
+### Cluster  20
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   20 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster20
+```
+
+### Cluster  21
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   21 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster21
+```
+
+### Cluster  22
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   22 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster22
+```
+
+### Cluster  23
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   23 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster23
+```
+
+### Cluster  24
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   24 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster24
+```
+
+### Cluster  25
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   25 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster25
+```
+
+### Cluster  26
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   26 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster26
+```
+
+### Cluster  27
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   27 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster27
+```
+
+### Cluster  28
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   28 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster28
+```
+
+### Cluster  29
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   29 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster29
+```
+
+### Cluster  30
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   30 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster30
+```
+
+### Cluster  31
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   31 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster31
+```
+
+### Cluster  32
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   32 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster32
+```
+
+### Cluster  33
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   33 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster33
+```
+
+### Cluster  34
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   34 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster34
+```
+
+### Cluster  35
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   35 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster35
+```
+
+### Cluster  36
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   36 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster36
+```
+
+### Cluster  37
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   37 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster37
+```
+
+### Cluster  38
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   38 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster38
+```
+
+### Cluster  39
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   39 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster39
+```
+
+### Cluster  40
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   40 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster40
+```
+
+### Cluster  41
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   41 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster41
+```
+
+### Cluster  42
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   42 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster42
+```
+
+### Cluster  43
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   43 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster43
+```
+
+### Cluster  44
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   44 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster44
+```
+
+### Cluster  45
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   45 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster45
+```
+
+### Cluster  46
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   46 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster46
+```
+
+### Cluster  47
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   47 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster47
+```
+
+### Cluster  48
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   48 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster48
+```
+
+### Cluster  49
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   49 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster49
+```
+
+### Cluster  50
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   50 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster50
+```
+
+### Cluster  51
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   51 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster51
+```
+
+### Cluster  52
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   52 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster52
+```
+
+### Cluster  53
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   53 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster53
+```
+
+### Cluster  54
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   54 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster54
+```
+
+### Cluster  55
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   55 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster55
+```
+
+### Cluster  56
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   56 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster56
+```
+
+### Cluster  57
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   57 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster57
+```
+
+### Cluster  58
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   58 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster58
+```
+
+### Cluster  59
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   59 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster59
+```
+
+### Cluster  60
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   60 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster60
+```
+
+### Cluster  61
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   61 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster61
+```
+
+### Cluster  62
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   62 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster62
+```
+
+### Cluster  63
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   63 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster63
+```
+
+### Cluster  64
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   64 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster64
+```
+
+### Cluster  65
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   65 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster65
+```
+
+### Cluster  66
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   66 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster66
+```
+
+### Cluster  67
+
+```{r}
+filter(.data = Clust.Key.tb, Cluster ==   67 ) %>% knitr::kable()
+
+dem.12m.hclust.ct$var$cluster67
+```
+
+### Identify correlated groups of cluster central synthetic variables
+
+
+#### export the clusters
+
+#### rejoin CLNR
+
+```{r}
+dem.12m.csv.tb <- as_tibble(dem.12m.hclust.ct$scores) %>%
+  rename_all(.funs = function(x){paste0('dem.12m.', x)}) %>% 
+    bind_cols(select(dem.bs.tb, CLNR)) %>%
+      select(CLNR, everything())
+```
+
+#### export the central synthetic variables for the clusters of the 12m buffer summary statistics:
+
+```{r, eval = FALSE}
+save(list = 'dem.12m.csv.tb', file = '~/rwa/data/clustered_data/clustered_dem_12m/dem_12m_csv.RData')
+```
+
+```{r}
+load('~/rwa/data/clustered_data/clustered_dem_12m/dem_12m_csv.RData')
+```
+
+# Clustering the Terrain \& Climate Data
+
+For this round of modelling we will use the following groups of explanatory variables:
+
+ * the central synthetic variables of the first set of NFI derived variables 
+ * the central synthetic variables of the second set of NFI derived variables
+ * the central synthetic variables of the clusters of summary statistics of the DEM product values in the central 12m buffer
+ * distances to the nearest: small road, large road and building
+ * 10 year means of the climate summary statistics (bioclim, anuclim, etc.)
+
+Load a workspace that contains the data prepared for a previous round of modelling.
+This workspace includes a tibble that contains the ants data (`Data.tb`) and another tibble that contains indexes for the divisions of the data for cross validation (`CV.Partitions.tb`).
+
+```{r}
+load('~/rwa/data/tuning_random_forests/cv_setup/RWAMO_RF_CV_SetUp_Data_Only.RData')
+```
+
+Extract the ants data:
+```{r}
+ants.tb <- select(Data.tb, CLNR, RWAM)
+
+colnames(ants.tb)
+```
+
+Extract the central synthetic variables for the clusters of the first set of NFI derived variables:
+```{r}
+nfi.s1.tb <- select(Data.tb, CLNR, contains('NFI.S1'))
+
+colnames(nfi.s1.tb)
+```
+
+Extract the central synthetic variables for the clusters of the second set of NFI derived variables:
+```{r}
+nfi.s2.tb <- select(Data.tb, CLNR, contains('NFI.S2'))
+
+colnames(nfi.s2.tb)
+```
+
+Extract the central synthetic variables for the clusters of DEM derived variables describing the central 12m disk buffer:
+```{r}
+load('~/rwa/data/clustered_data/clustered_dem_12m/dem_12m_csv.RData')
+
+colnames(dem.12m.csv.tb)
+```
+
+Load and extract the distances to the nearest: small road, large road and building:
+
+ * `near_dst_b`  = Distance to nearest Building
+ * `near_dst_sr` = Distance to nearest Small Road
+ * `near_dst_lr` = Distance to nearest Large Road
+  
+```{r}
+load('~/rwa/data/roads_buildings/roads_buildings_data_prepared_unfiltered.RData')
+
+rdbd.tb <- select(rdbd.tb, CLNR, near_dst_b, near_dst_sr, near_dst_lr)
+```
+
+Examine the correlations between these three variables:
+```{r}
+select(rdbd.tb, -CLNR) %>%
+  cor()
+```
+
+There is no need to cluster these variables because none of the possible pairs of these variable are particularly strongly correlated.
+
+Load and extract the 10 year means of the climate summary statistics:
+
+```{r}
+load('~/rwa/data/processed_climate/climate.summaries.tb')
+
+clim.10yr.tb <- select(climate.summaries.tb, CLNR, matches('10yr\\.mean'))
+
+colnames(clim.10yr.tb)
+```
+
+Join the data:
+```{r}
+Data.Y.X.ID.tb <- purrr::reduce(.x = list(ants.tb,
+                                          nfi.s1.tb,
+                                          nfi.s2.tb,
+                                          dem.12m.csv.tb,
+                                          rdbd.tb,
+                                          clim.10yr.tb
+                                     ),
+                                .f = full_join,
+                                by = 'CLNR') %>%
+                    filter(!is.na(RWAM))
+```
+
+These data contain 149 explanatory variables:
+```{r}
+select(Data.Y.X.ID.tb, -CLNR, -RWAM) %>%
+  ncol()
+```
+
+Count the numbers of Red Wood Ant mound presences and absences in these data:
+```{r}
+group_by(Data.Y.X.ID.tb, RWAM) %>%
+  count()
+```
+
+Check the prepared data for missing values:
+```{r}
+anyNA(Data.Y.X.ID.tb)
+```
+
+Examine the correlations between the explanatory variables.
+
+```{r, fig.width = 12, fig.height = 9}
+select(Data.Y.X.ID.tb, -CLNR, -RWAM) %>%
+  cor() %>%
+    heatmaply(colors = PRGn, limits = c(-1,1), margins = c(120,120),
+              column_text_angle = 90, fontsize_row = 6, fontsize_col = 6)
+```
+
+We need to reduce the collinearity in our design matrix because the conditional variable importance scores that `party` calculates are calculated by partitioning the data based on each individual tree then only permuting the values of correlated explanatory variables within the partition defined by the variable with which they are correlated.
+Thus we need some variation between even our most correlated explanatory variables within these partions to make these permutations meaningful.
+
+If we wished to reduce the maximum correlation coefficient magnitude between any pair of remaining explanatory variables to 0.8 we could achieve this by discarding the following set of explanatory variables:
+
+```{r}
+vars.to.discard <- select(Data.Y.X.ID.tb, -CLNR, -RWAM) %>%
+  cor() %>%
+    caret::findCorrelation(cutoff = 0.8, names = TRUE)
+
+sort(vars.to.discard)
+```
+
+These variables are all descriptions of the climate and terrain.
+Rather than discard any of these variables I am instead going to cluster the related climate and terrain variables and summarise each cluster with a central synthetic variable.
+I will then examine the correlations between these central synthetic variables.
+
+Clustering the variables that describe the climate and terrain:
+
+```{r}
+system.time(dem.clim.hclust <- hclustvar(X.quanti = select(Data.Y.X.ID.tb, matches('dem|clim|ap|dp|FRD')) %>% as.matrix()))
+```
+
+Examining the stability of the clusters:
+
+```{r, eval = FALSE}
+system.time(dem.clim.hclust.stab <- stability(tree = dem.clim.hclust, B = 100, graph = FALSE))
+```
+
+```{r, eval = FALSE}
+save(list = c('dem.clim.hclust.stab', 'dem.clim.hclust'),
+     file = '~/rwa/party_data/data_preparation/clustered_climate_and_terrain_variables/dem_clim_hclust_stab.RData'
+    )
+```
+
+```{r, echo = FALSE}
+load('~/rwa/party_data/data_preparation/clustered_climate_and_terrain_variables/dem_clim_hclust_stab.RData')
+```
+
+```{r, fig.width = 12, fig.height = 9}
+boxplot(dem.clim.hclust.stab$matCR)
+
+abline(v = 81-1, col = 'blue', lty = 2)
+```
+
+81 clusters appears to be a reasonably stable number of clusters as assessed by the bootstrapping.
+
+```{r}
+dem.clim.hclust.ct <- cutreevar(obj = dem.clim.hclust, k = 81)
+```
+
+```{r}
+dem.clim.clust.members.tb <- enframe(dem.clim.hclust.ct$cluster) %>%
+  rename(cluster = value, variable = name)
+```
+
+Examine the clusters that contain more than one explanatory variable:
+```{r}
+mult.var.clust.tb <- group_by(dem.clim.clust.members.tb, cluster) %>%
+  count() %>%
+    arrange(desc(n)) %>%
+      filter(n > 1) %>%
+        ungroup() %>%
+          right_join(y = dem.clim.clust.members.tb, by = 'cluster') %>%
+            filter(!is.na(n)) %>%
+              arrange(desc(n), cluster) %>%
+                select(-n)
+
+knitr::kable(mult.var.clust.tb)
+```
+
+Interpret these clusters:
+
+#### Cluster 62
+
+| Cluster|Variable               | Explanation
+|-------:|:----------------------|------------
+|      62|dem.12m.cluster65      | All elevation summary statistics except standard deviation
+|      62|clim01.10yr.mean       | clim01 = Annual Mean Temperature
+|      62|clim05.10yr.mean       | clim05 = Annual Maximum Daily Temperature
+|      62|clim06.10yr.mean       | clim06 = Annual Minimum Daily Temperature
+|      62|clim10.10yr.mean       | clim10 = Mean Temperature of the Hottest Quarter
+|      62|clim11.10yr.mean       | clim11 = Mean Temperature of the Coldest Quarter
+|      62|dp.mean.temp.10yr.mean | dp.mean.temp = Mean Temperature of the Dormant Period
+|      62|ap.mean.temp.10yr.mean | ap.mean.temp = Mean Temperature of the Active Period
+
+```{r}
+dem.clim.hclust.ct$var$cluster62
+```
+
+Thus cluster 62 describes elevation and related temperature derived climate summary statistics.
+In particular this cluster describes the negative correlations of the summary statistics of temperature with elevation.
+
+#### Cluster 77
+
+| cluster|variable               | Explanation
+|-------:|:----------------------|
+|      77|clim20.10yr.mean       | clim20 = Annual Mean Insolation
+|      77|clim21m.10yr.mean      | clim21m = largest 30 day rolling mean in solar radiation
+|      77|clim25.10yr.mean       | clim25 = Mean Insolation of the Driest Quarter
+|      77|clim26.10yr.mean       | clim26 = Mean Insolation of the Hottest Quarter
+|      77|ap.mean.srad.10yr.mean | ap.mean.srad = Mean Daily Insolation of the Active Period
+
+Thus Cluster 77 describes the 10 year means of the means of daily insolation values over different periods within these years.
+
+#### Cluster 70
+
+| cluster|variable               | Explanation
+|-------:|:----------------------|
+|      70|clim12.10yr.mean       | clim12 = Annual Precipitation
+|      70|clim13m.10yr.mean      | clim13m = precipitation of the wettest consecutive 30 days
+|      70|ap.tot.prcp.10yr.mean  | ap.tot.prcp = Precipitation over the Active Period
+
+Thus Cluster 70 describes the 10 year means of precipitation totals over different periods within these years.
+
+#### Cluster 78
+
+| cluster|variable               | Explanation
+|-------:|:----------------------|
+|      78|clim22m.10yr.mean      | clim22m = lowest 30 day rolling mean in solar radiation during the year
+|      78|clim27.10yr.mean       | clim27 = Mean Insolation of the Coldest Quarter
+|      78|dp.mean.srad.10yr.mean | dp.mean.srad = Mean Daily Insolation of the Dormant Period
+
+Thus Cluster 78 describes the 10 year means of the mean insolation values in colder periods of these years.
+
+#### Cluster 28
+
+| cluster|variable               | Explanation
+|-------:|:----------------------|
+|      28|dem.12m.cluster28      | all summay statistics of Northness except standard deviation
+|      28|dem.12m.cluster34      | all site exposure summary statistics except standard deviation
+
+Thus Cluster 28 describes northness and site exposure.
+
+#### Cluster 31
+
+| cluster|variable               | Explanation
+|-------:|:----------------------|
+|      31|dem.12m.cluster31      | First quartile Roughness, Minimum Roughness \& Minimum Slope
+|      31|dem.12m.cluster46      | standard deviation of elevation \& mean, median, Q1, Q3 \& max of slope
+
+Thus Cluster 31 describes the lower values of terrain roughness, the value of slope and the amount of variation in elevation within the 12.5m disk buffer centered on each NFI plot.
+
+#### Cluster 54
+
+| cluster|variable               | Explanation
+|-------:|:----------------------|
+|      54|dem.12m.cluster56      | Standard Deviation \& Maximum of Topographic Position Index; Standard Deviation & Maximum of Plan Curvature |
+|      54|dem.12m.cluster63      | Standard Deviation \& Minimum of Profile Curvature |
+
+Thus Cluster 54 describes the variation in topographic postion index, plan curvature and profile curvature within the 12.5m disk buffer centered on each NFI plot.
+
+#### Cluster 65
+
+| cluster|variable               | Explanation
+|-------:|:----------------------|
+|      65|clim02.10yr.mean       | clim02 = Annual Mean of Diurnal Temperature Ranges
+|      65|clim03.10yr.mean       | clim03 = Isothermality = clim02 divided by clim07 = (Annual Mean of Diurnal Temperature Ranges)/(Annual Temperature Range)
+
+Thus Cluster 65 describes the 10 year means of the ranges of temperatures experienced over these years by an NFI plot.
+
+#### Cluster 76
+
+| cluster|variable               | Explanation
+|-------:|:----------------------|
+|      76|clim19.10yr.mean       | clim19 = Total Precipitation of the Coldest Quarter
+|      76|dp.tot.prcp.10yr.mean  | dp.tot.prcp = Precipitation over the Dormant Period
+
+Thus Cluster 76 describes the 10 year mean of the amounts of precipitation received during the colder periods of these years.
+
+
+Examine the clusters that contain a single variable:
+
+```{r}
+single.var.clust.tb <- group_by(dem.clim.clust.members.tb, cluster) %>%
+  count() %>%
+    arrange(desc(n)) %>%
+      filter(n == 1) %>%
+        ungroup() %>%
+          right_join(y = dem.clim.clust.members.tb, by = 'cluster') %>%
+            filter(!is.na(n)) %>%
+              arrange(desc(n), cluster) %>%
+                select(-n)
+
+knitr::kable(single.var.clust.tb)
+```
+
+
+Examine the correlations among the central synthetic variables of these clusters:
+
+```{r, fig.width = 12, fig.height = 9}
+dem.clim.hclust.ct$scores %>%
+  cor() %>%
+    heatmaply(colors = PRGn, limits = c(-1,1), margins = c(120,120),
+              column_text_angle = 90, fontsize_row = 6, fontsize_col = 6)
+```
+
+```{r}
+dem.clim.hclust.ct$scores %>%
+  cor() %>%
+    as_tibble(rownames = 'Var.1') %>%
+      gather(-Var.1, key = 'Var.2', value = 'Corr') %>%
+        filter(!(Var.1 == Var.2)) %>%
+          mutate(Abs.Corr = abs(Corr)) %>%
+            arrange(desc(Abs.Corr)) %>%
+              slice(1:10)
+```
+
+```{r}
+dem.clim.hclust.ct$scores %>%
+  cor() %>%
+    findCorrelation(names = TRUE)
+```
+
+Thus we should discard cluster77 due to it's correlation with cluster78 if we wish to keep the maximum correlation coefficient magnitude between pairs of potential explanatory variables below 0.9.
+Cluster 77 describes means of daily insolation values over the entire year and over periods of high insolation.
+Cluster 78 describes the means of daily insolation values over periods of lower insolation.
+
+The central synthetic variables of these two clusters are strongly negatively correlated but not perfectly correlated (r = -0.914).
+This suggests that higher mean insolation over the year and over periods of peak insolation correspond to lower mean insolation values over periods of low insolation.
+I will retain the central synthetic variables for both these clusters in the analysis because there is variation between them that may be sufficient for the conditional permutation tests of the party package to function.
+However it will be important to recall this correlation when interpreting the results of these tests.
+
+
+Rename the central synthetic variables describing the clusters of variables that describe the climate and terrain: 
+
+```{r}
+dem.clim.csv.tb <- as_tibble(dem.clim.hclust.ct$scores) %>%
+  rename_all(.funs = function(x){str_replace(string = x, pattern = 'cluster', replacement = 'Clim.Terr.C')}
+    )
+
+colnames(dem.clim.csv.tb)
+```
+
+# Aggregating the final Set of Explanatory Variables
+
+Replace the variables that describe the terrain and climate with the central synthetic variables that describe the clusters of these variables that describe the terrain and climate.
+
+```{r}
+Data.Y.X.ID.tb <- select(Data.Y.X.ID.tb, -matches('dem|clim|ap|dp|FRD')) %>%
+  bind_cols(dem.clim.csv.tb)
+```
+
+Examine the correlations among this preparation of explanatory variables:
+
+```{r}
+select(Data.Y.X.ID.tb, -CLNR, -RWAM) %>%
+  cor() %>%
+    findCorrelation(names = TRUE)
+```
+
+```{r}
+select(Data.Y.X.ID.tb, -CLNR, -RWAM) %>%
+  cor() %>%
+    as_tibble(rownames = 'Var.1') %>%
+      gather(-Var.1, key = 'Var.2', value = 'Corr') %>%
+        filter(!(Var.1 == Var.2)) %>%
+          mutate(Abs.Corr = abs(Corr)) %>%
+            arrange(desc(Abs.Corr)) %>%
+              slice(1:10)
+```
+
+Thus the strongest correlation between any pair of explanatory variables is that between `Clim.Terr.C78` and `Clim.Terr.C77` which has already been discussed.
+
+Check if any variables are linear combinations of other variables:
+
+```{r}
+select(Data.Y.X.ID.tb, -CLNR, -RWAM) %>%
+  caret::findLinearCombos() 
+```
+
+Thus there are none.
+
+There are 129 explanatory variables in the prepared data:
+
+```{r}
+select(Data.Y.X.ID.tb, -CLNR, -RWAM) %>%
+  ncol()
+```
+
+Creating the workspace which will be used when tuning the model via cross validation:
+
+Source the Cross Validation Function:
+```{r,message = FALSE, eval = FALSE}  
+source('./party/party_tune/cv.grid.search.party.R')
+```
+
+Save the objects that will be used in the cross validation:
+
+ * `cv.grid.search.party( )` the cross validation function
+ * `CV.Partitions.tb` indexes to the partitions of the data to be used in the cross validation
+ * `Data.Y.X.ID.tb` the prepared data (which contains the following columns: Response Variable = `RWAM`, Observation Identifier = `CLNR` and all other columns contain explanatory variables).
+
+```{r, eval = FALSE}
+save(list = c('cv.grid.search.party', 'CV.Partitions.tb', 'Data.Y.X.ID.tb'),
+     file = '~/rwa/party_data/party_tune/cv_initial_workspace/party_cv_input.RData')
+```
+
+# References
+
+[1] [Chavent, M., Kuentz-Simonet, V., Liquet, B., & Saracco, L. (2012). ClustOfVar: An R Package for the Clustering of Variables. Journal of Statistical Software, 50(13), 1–16.](https://doi.org/http://dx.doi.org/10.18637/jss.v050.i13)
+
+# Appendix 
+
+Source for `cmv.csv()`
+
+```{r, code=readLines('./functions/cmv.csv.R')}
+```

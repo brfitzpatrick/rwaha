@@ -1,0 +1,1271 @@
+---
+title: "S1 Preparation of Ant Data"
+author: "Author Blank for Double Blind Peer Review"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Introduction
+
+In this file I prepare a [tibble](http://r4ds.had.co.nz/tibbles.html) that contains the observations of presence or absence of Red Wood Ant mounds in each of the NFI plots.
+Here I will use the common name Red Wood Ants to refer to the *Formica rufa group* which is a subgroup of the subgenus *Formica sensu stricto*.
+The raw data for this preparation consist of taxonomic identifications for each ant specimen collected from NFI plots.  
+The data prepared in this file include observations of ants sampled from mounds detected in the NFI plots in addition to observations of ants sampled from the trunks of trees in the NFI plots.
+The data preparation described in this document filters out all ants sampled from tree trunks and creates a tibble that contains NFI plot identification numbers accompanied by a categorical variable that codes for the presence or absence in these plots of mounds from any of the species of Red Wood Ants.
+Genetic analysis is required to distinguish between the species *Formica lugubris* and *Formica paralugubris*.
+In a couple of cases this analysis failed or the sample was lost so while we know these samples were Red Wood Ants from the morphological identification the species identification for these samples is unknown.
+
+# Data Preparation:
+My objective is to create a tibble that contains a column of NFI plot identification codes, a column that contains the year the plot was visited and a column that contains a categorical variable that codes for the presence or absence of mounds from any species of Red Wood Ants in this plot in the year it was visited.
+
+Load the packages I will use:
+```{r, output=FALSE, message=FALSE}
+library('readxl')
+library('lubridate')
+library('stringr')
+library('tidyverse')
+```
+
+Set the file path to the write protected .xlsx file containing the ants data:
+```{r, output = FALSE}
+ameisen.xlsx <- '~/rwa/data/ants/Ameisen_Data_2009-2017_pourWSL_22.03.2018.xlsx'
+```
+
+Read in the sheet named '2009-2017' from the .xlsx (the other sheet contains some summaries of the data).
+```{r}
+ameisen.tb <- read_excel(path = ameisen.xlsx, sheet = '2009-2017')
+```
+
+Read in the correct plot coordinates (these are the coordinates obtained by GPS at the plot center):
+```{r}
+correct.coordinates.tb <- read_excel(path = ameisen.xlsx <- '~/rwa/data/NFI/Daten/Richtige Koordinaten der besuchten Probeflächen_2009-2017_Rohdaten.xlsx', sheet = 'SQL Results')
+```
+
+Examine the column names of the data:
+```{r}
+colnames(ameisen.tb)
+```
+
+My understanding of the meanings of the column names is summarised in the table below:
+
+| Column Name          | Meaning                                                      | Note                                           |
+|----------------------|--------------------------------------------------------------|------------------------------------------------|
+| rang                 | ???                                                          |                                                |
+| JAHR                 | Year                                                         |                                                |
+| INVNR                | Inventory Number                                             |                                                |
+| CLNR                 | NFI Plot Identifier                                          |                                                |
+| X                    | X coordinates (position East-West)                           |                                                |
+| Y                    | Y coordinates (position North-South)                         |                                                |
+| Z                    | Elevation                                                    |                                                |
+| GEMEINDE             | Municipality                                                 |                                                |
+| KANTON               | Canton                                                       |                                                |
+| BANR                 | ???                                                          |                                                |
+| jj                   | Day                                                          |                                                |
+| mm                   | Month                                                        |                                                |
+| aaaa                 | Year                                                         |                                                |
+| DATUM                | Date                                                         |                                                |
+| BAUMART              | Tree species	                                              | only for ants from trees                       |
+| BHD                  | Tree diameter at breast height of the tree                   | only for trees from which ants were collected  |
+| UMFANG               | Size of tree from which Ants were collected???               | Martijn's best guess                           |
+| AMEISENPROBENRBAUM   | Identification number of tree from which ants were collected | only for ants from trees                       |
+| AMEISENHAUFENPROBENR | Ant mound number                                             |                                                |
+| FdB                  | wood ant                                                     | acronym for fourmis des bois?                  |
+| Détermination        | Ant species                                                  |                                                |
+| Remarques            | Comments                                                     |                                                |
+
+
+## Data Exploration
+
+There are three observations with missing values for `CLNR`:
+```{r}
+filter(ameisen.tb, is.na(CLNR)) %>%
+  select(CLNR, INVNR, X, Y, GEMEINDE, JAHR, AMEISENHAUFENPROBENR, AMEISENPROBENRBAUM, Détermination, Remarques) %>%
+    knitr::kable()
+```
+
+This is a problem because without the `CLNR` (or coordinates, which are also missing) we will not be able to join these observations to the remainder of the data (i.e. NFI observations, climate data, DTM product summaries etc. which we will use as explanatory variables in the modelling).
+
+Only one of these observations is from an ant mound (the others are from trees).
+This observation from an ant mound that is missing a `CLNR` does have an ant mound identifier i.e. a non-missing value for `AMEISENHAUFENPROBENR`.
+
+Fortunately the `AMEISENHAUFENPROBENR` includes the CLNR between the first and second `_` in these entries:
+
+```{r}
+test.1 <- select(ameisen.tb, CLNR, AMEISENHAUFENPROBENR) %>%
+  filter(!is.na(AMEISENHAUFENPROBENR) & !is.na(CLNR)) %>%
+    separate(col = AMEISENHAUFENPROBENR, sep = '_', into = c('AMID.C1', 'AMID.C2', 'AMID.C3'), remove = FALSE) %>%
+      mutate(CLNR.chr = as.character(CLNR),
+             test = (CLNR.chr == AMID.C2)
+      )
+
+summary(test.1$test)
+```
+
+Consequently we can safely replace the missing `CLNR` associated with `AMEISENHAUFENPROBENR = 4091_155841_1` with the value `155841` taken from between the `_` in this `AMEISENHAUFENPROBENR` entry.
+
+```{r}
+ameisen.2.tb <- separate(ameisen.tb, col = AMEISENHAUFENPROBENR, sep = '_', into = c('AMID.C1', 'AMID.C2', 'AMID.C3'), remove = FALSE) %>%
+  mutate(CLNR.completed = case_when( is.na(CLNR) ~ as.numeric(AMID.C2),
+                                    !is.na(CLNR) ~ CLNR
+                          )
+  )       
+```
+
+We can see the replacement has been performed correctly in the new variable `CLNR.completed`:
+```{r}
+filter(ameisen.2.tb, is.na(CLNR)) %>%
+  select(CLNR, CLNR.completed, AMID.C2, AMEISENHAUFENPROBENR)
+```
+
+We can also see that for all non-missing `CLNR` values the `CLNR == CLNR.completed`:
+```{r}
+filter(ameisen.2.tb, !is.na(CLNR)) %>%
+  mutate(test = (CLNR == CLNR.completed)) %>%
+    pull(test) %>%
+      summary()
+```
+
+Thus it is safe to replace `CLNR` with `CLNR.completed`:
+```{r}
+ameisen.tb <- select(ameisen.2.tb, -CLNR, -AMID.C1, -AMID.C2, -AMID.C3) %>%
+  rename(CLNR = CLNR.completed)
+```
+
+Investigating the two observations with missing values for CLNR which came from trees:
+```{r}
+filter(ameisen.tb, is.na(CLNR) & is.na(AMEISENHAUFENPROBENR) & (!is.na(AMEISENPROBENRBAUM))) %>%
+  select(CLNR, INVNR, X, Y, GEMEINDE, JAHR, AMEISENHAUFENPROBENR, AMEISENPROBENRBAUM, Détermination, Remarques) %>%
+    knitr::kable()
+```
+
+It looks like `AMEISENPROBENRBAUM` contains the `CLNR` between the first and second `_`.
+Let's check if this is the case.
+
+```{r}
+filter(ameisen.tb, (!is.na(AMEISENPROBENRBAUM))) %>%
+  select(CLNR, INVNR, X, Y, AMEISENPROBENRBAUM) %>%
+    slice(1:10) %>%
+      knitr::kable()
+```
+
+```{r}
+filter(ameisen.tb, !is.na(CLNR), !is.na(AMEISENPROBENRBAUM)) %>%
+  select(CLNR, AMEISENPROBENRBAUM) %>%
+    separate(col = AMEISENPROBENRBAUM, sep = '\\_', into = c('Tree.ID.C1', 'Tree.ID.C2', 'Tree.ID.C3', 'Tree.ID.C4', 'Five' ), remove = FALSE, fill = 'right') %>%
+      mutate(CLNR.chr = as.character(CLNR),
+             test = (CLNR.chr == Tree.ID.C2)) %>%
+        pull(test) %>%
+          summary()
+```
+
+```{r}
+ameisen.3.tb <- separate(data = ameisen.tb, col = AMEISENPROBENRBAUM, sep = '\\_', into = c('Tree.ID.C1', 'Tree.ID.C2', 'Tree.ID.C3', 'Tree.ID.C4', 'Five' ), remove = FALSE, fill = 'right') %>%
+      mutate(CLNR.corrected = case_when( !is.na(CLNR)                              ~ CLNR,
+                                          is.na(CLNR) & !is.na(AMEISENPROBENRBAUM) ~ as.numeric(Tree.ID.C2),
+                                          is.na(CLNR) & is.na(AMEISENPROBENRBAUM)  ~ as.numeric(NA)
+                              )
+      )
+```
+
+We can see that for all non-missing `CLNR` values the `CLNR == CLNR.corrected`:
+```{r}
+filter(ameisen.3.tb, !is.na(CLNR)) %>%
+  mutate(test = (CLNR == CLNR.corrected)) %>%
+    pull(test) %>%
+      summary()
+```
+
+We can see the replacement has been performed correctly in the new variable `CLNR.corrected`:
+```{r}
+filter(ameisen.3.tb, is.na(CLNR)) %>%
+  select(CLNR, CLNR.corrected, AMEISENPROBENRBAUM)
+```
+
+Thus it is safe to replace `CLNR` with `CLNR.corrected`:
+```{r}
+ameisen.tb <- select(ameisen.3.tb, -CLNR, -Tree.ID.C1, -Tree.ID.C2, -Tree.ID.C3, -Tree.ID.C4, -Five) %>%
+  rename(CLNR = CLNR.corrected)
+```
+
+```{r}
+pull(ameisen.tb, CLNR) %>%
+  anyNA()
+```
+
+The column 'FdB' contains entries that are either: 'x' or NA
+```{r}
+unique(ameisen.tb$FdB)
+```
+
+Investigating what an entry of 'x' in the column 'FdB' means:
+
+```{r}
+filter(.data = ameisen.tb, FdB == 'x') %>%
+  pull(Détermination) %>%
+    unique()
+```
+
+```{r}
+filter(.data = ameisen.tb, FdB == 'x') %>%
+  pull(Détermination) %>%
+    unique() %>%
+      str_replace(pattern = 'Formica ', replacement = '') %>%
+        str_split(pattern = '/') %>%
+          unlist() %>%
+            unique() %>%
+              sort()
+```
+
+Thus all rows with an entry of 'x' in the column 'FdB' contain ants from the *Formica rufa group*.
+
+Investigating what an entry of NA in the column 'FdB' means
+
+```{r}
+filter(.data = ameisen.tb, is.na(FdB)) %>%
+  pull(Détermination) %>%
+    unique()
+```
+
+```{r}
+ameisen.tb %>%
+  filter(is.na(FdB)) %>%
+    pull(Détermination) %>%
+      unique() %>%
+        str_subset(pattern = '^Formica')
+```
+
+None of the ants from the genus *Formica* that are accompanied by an NA in the column FdB are members of the Formica rufa group.
+
+Examining all species that are not of genus *Formica* and thus are not Red Wood Ants  plus "détermination pas notée !"  "determination not noted!"
+
+```{r}
+ameisen.tb %>%
+  filter(is.na(FdB)) %>%
+    pull(Détermination) %>%
+      unique() %>%
+        str_subset(pattern = '^(?!Formica)')
+```
+
+all these species are not of genus *Formica* and thus are not members of the *Formica rufa group*.
+
+Consequently, for the purposes of identifying observations of the *Formica rufa group* it would be safe to subset `ameisen.tb` to the rows with an `x` in the column `FdB`.
+ 
+### Ant Mound Identification Number
+
+The first step in creating a tibble for Red Wood Ant mound presence/absence in a plot is the exclusion of records of ants that were not collected from mounds.
+
+`AMEISENHAUFENPROBENR` = ant mound number which is a unique identifier of each ant mound recorded
+
+thus we should filter our data to rows with an entry that is not an `NA` in this column to exclude the ant samples collected from trees instead of from mounds
+
+before we do this however, it's important to check what these entries are incase any are not identifiable
+
+```{r}
+unique.ant.mound.numbers <- filter(.data = ameisen.tb, !is.na(AMEISENHAUFENPROBENR)) %>%
+  pull(AMEISENHAUFENPROBENR) %>%
+    unique()
+
+length(unique.ant.mound.numbers) 
+```
+
+thus there are 443 unique ant mound numbers
+
+```{r}
+class(unique.ant.mound.numbers) 
+```
+
+the ants mound numbers form a character vector (due to presence of underscores in each entry)
+
+```{r}
+head(unique.ant.mound.numbers)
+
+tail(unique.ant.mound.numbers) 
+```
+
+ant mound numbers range in length from 11 to 14 characters
+
+```{r}
+stringr::str_length(unique.ant.mound.numbers) %>%
+  summary()
+```
+
+all ant mount numbers contain exactly two underscores:
+
+```{r}
+stringr::str_count(string = unique.ant.mound.numbers, pattern = '_') %>%
+  unique()
+```
+
+#### Which column to use for Year of sampling
+
+```{r}
+select(.data = ameisen.tb,
+       JAHR,
+       aaaa,
+       DATUM) %>%
+    slice(1:10)
+```
+these three columns all contain the year or a date string that includes the year
+
+```{r}
+select(.data = ameisen.tb,
+       JAHR,
+       aaaa,
+       DATUM) %>%
+    summary()
+```
+
+`JAHR` is complete while both `aaaa` and `DATUM` contain NAs
+
+```{r}
+pull(.data = ameisen.tb, JAHR) %>%
+  anyNA()
+```
+
+Checking whether the year we can derive from the column `DATUM` matches the year recorded in `JAHR` when entries are present in the column `DATUM` by creating a logical column for when `Year == JAHR`:
+
+```{r}
+mutate(.data = ameisen.tb,
+       Year = year(DATUM)) %>%
+  filter(!is.na(DATUM)) %>%
+    mutate(Year.JAHR = (Year == JAHR)) %>%
+      select(JAHR, Year, DATUM, Year.JAHR) %>%
+        summary()
+```
+
+thus we should use `JAHR` as our `Year` column.
+
+## Preparation of a Tibble containing observations of the Presence or Absence of Red Wood Ant Mounds in NFI Plots
+
+Now to filter the data and create a tibble that contains:
+
+- `Year` = the year in which the plot identified by `CLNR` was visited and searched for ant mounds
+- `CLNR` = the number which uniquely identifies NFI Plots
+- `RWA.Presence` = a new derived variable containing observations of presence or absence of Red Wood Ant mounds in the plot identified by `CLNR`  and the year identified by `Year`.  
+
+This tibble will have 1 row per unique combination of `CLNR` and `Year` in the ants data.
+
+`RWA.Presence` will have levels: 
+ 
+ * `1` = RWA mound Present, 
+ * `0` = RWA mound Absent and
+ * `NA` = Missing Data.
+
+We need the missing data category in `RWA.Presence` for plots where we are unsure of whether any of the ant mounds were Red Wood Ant mounds.
+
+This situation occurs when ants were collected from mounds in a plot but none of these ants were successfully identified as members of *Formica rufa group* and species identification failed for one or more of these ants.
+Species identification failures are denoted by entries of `détermination pas notée !` in the column `Détermination`.
+
+The first step in this process is to create a tibble that contains the observations of ants collected from ants mounds:
+```{r}
+ants.from.mounds.tb <- mutate(ameisen.tb,
+                              Year = JAHR,
+                              Date = DATUM,
+                              Mound.ID = AMEISENHAUFENPROBENR,
+                              Wood.Ant = FdB,
+                              Species = Détermination,
+                              Comment = Remarques) %>%
+    filter(!is.na(Mound.ID)) %>% # exclude rows with an NA in the column Mound.ID 
+      select(CLNR, # subset to the columns we need
+             Year,
+             Date,
+             Mound.ID,
+             Wood.Ant,
+             Species,
+             Comment)
+
+summary(ants.from.mounds.tb)
+```
+
+#### Investigating the number of unique Red Wood Ant species ID's per Mound.ID
+
+```{r}
+filter(ants.from.mounds.tb, Wood.Ant == 'x') %>% # filtering out the records of species other than Red Wood Ants
+  group_by(Mound.ID) %>%
+    summarise(N.Species = length(unique(Species))) %>%
+      pull(N.Species) %>%
+        unique()
+```
+
+Thus there are no records of mounds from which multiple species of Red Wood Ants were collected.
+
+#### Filtering to just the observations of Red Wood Ants from ant mounds:
+```{r}
+wood.ants.from.mounds.tb <- filter(ants.from.mounds.tb, Wood.Ant == 'x')
+```
+
+#### Did any of the Red Wood Ant mounds have multiple records in any particular year?
+
+```{r}
+group_by(wood.ants.from.mounds.tb, Year, Mound.ID) %>%
+  summarise(Records = n()) %>%
+    arrange(desc(Records)) %>%
+      ungroup() %>%
+        slice(1:10)
+```
+
+Looking at the mounds that had multiple records from a single year:
+```{r}
+group_by(wood.ants.from.mounds.tb, Year, Mound.ID) %>%
+  summarise(Records = n(), Species = unique(Species), CLNR = unique(CLNR)) %>%
+    filter(Records > 1)
+```
+
+There are three mounds that each have two records.
+Two of these mounds were observed in 2010 and one was observed in 2011.
+Each of these mounds had the same species observed in both of its records.
+All other mounds had only one record from the particular year in which they were visited and searched for ants.
+
+#### Presence/Absence of Each Red Wood Ant Species
+
+Creating a tibble with rows for each combination of `CLNR` and `Year` in which Red Wood Ant mounds were detected and columns for the presence/absence of each Red Wood Ant species.
+
+
+Note: we have a few mounds from which we have multiple records (of the same species).
+
+Number of records of each species:
+```{r}
+group_by(wood.ants.from.mounds.tb, Species) %>%
+  count() %>%
+    arrange(desc(n))
+```
+
+Thus there are three observations for which the species is uncertain (though each option is a Red Wood Ant species).
+
+Two of these observations read `Formica lugubris/paralugubris` and the remaining observation reads `Formica rufa/polyctena`.
+
+Examining the entries in other columns of these observations:
+
+```{r}
+sp.uncert.tb <- filter(wood.ants.from.mounds.tb, str_detect(string = Species, pattern = '/')) %>%
+  select(Mound.ID, Species, Comment) %>%
+    mutate(DeepL = c('Mixed or hybrid sample...', 'forgotten during the 2018 genetic analysis', 'forgotten during the 2018 genetic analysis'))
+
+knitr::kable(sp.uncert.tb, col.names = c('Mound.ID', 'Species', 'Comment.Fr', 'Comment.En'))
+```
+
+These identifications are precise enough that we can be confident these ants were Red Wood Ants.
+Consequently I will include these observations in the determination of Red Wood Ant presence or absence from an NFI plot.
+However I will not include these observations in the tibble I am preparing below for the presence or absence of each species in each NFI plot.
+
+```{r}
+wood.ant.species.presence.absence.tb <- filter(wood.ants.from.mounds.tb, !str_detect(string = Species, pattern = '/')) %>%
+  group_by(Year, CLNR, Species) %>%
+    summarise(N.Mounds = length(unique(Mound.ID))) %>%
+      spread(key = Species, value = N.Mounds, fill = 0) %>%
+        group_by(CLNR, Year) %>%
+          summarise_at(vars(contains('Formica')), sum) %>%  
+            ungroup() %>%
+              mutate_at(.vars = vars(contains('Formica')), 
+                        .funs = funs(Binary.PA = case_when(. > 0 ~ 1,
+                                                           . == 0 ~ 0)
+                   )
+          ) %>%
+            select(CLNR, Year, contains('Binary.PA'))
+
+slice(.data = wood.ant.species.presence.absence.tb, 1:10)
+```
+```{r}
+summary(wood.ant.species.presence.absence.tb)
+```
+
+some checks:
+```{r}
+Fl.1 <- group_by(wood.ants.from.mounds.tb, CLNR, Year) %>%
+  summarise(F.lugubris.Present = ('Formica lugubris' %in% Species)) %>%
+    ungroup() %>%
+      filter(F.lugubris.Present == TRUE)
+
+
+Fl.2 <- filter(wood.ant.species.presence.absence.tb, `Formica lugubris_Binary.PA` == 1)
+```
+
+```{r}
+Fl.1.Yr.CLNR <- arrange(Fl.1, Year, CLNR) %>%
+  select(Year, CLNR)
+
+Fl.2.Yr.CLNR <- arrange(Fl.2, Year, CLNR) %>%
+  select(Year, CLNR)
+
+identical(Fl.1.Yr.CLNR, Fl.2.Yr.CLNR)
+```
+
+some checks:
+```{r}
+sp.pa.test <- function(test.species = 'Formica lugubris'){  
+  Fl.1 <- group_by(wood.ants.from.mounds.tb, CLNR, Year) %>%
+    summarise(F.lugubris.Present = (test.species %in% Species)) %>%
+      ungroup() %>%
+        filter(F.lugubris.Present == TRUE)
+  test.sp.col.name.1 <- paste0(test.species,'_Binary.PA')
+  test.sp.col.name.2 <- quo(test.sp.col.name.1)
+  Fl.2 <- filter_at(wood.ant.species.presence.absence.tb, vars(!! test.sp.col.name.2), .vars_predicate = all_vars(. == 1))
+  Fl.1.Yr.CLNR <- arrange(Fl.1, Year, CLNR) %>%
+    select(Year, CLNR)
+  Fl.2.Yr.CLNR <- arrange(Fl.2, Year, CLNR) %>%
+    select(Year, CLNR)
+  result <- if_else(condition = identical(Fl.1.Yr.CLNR, Fl.2.Yr.CLNR), true = 'test passed', false = 'test failed')
+  return(paste(test.species, result))
+  }
+```
+
+```{r}
+filter(wood.ants.from.mounds.tb, !str_detect(string = Species, pattern = '/')) %>%
+  pull(Species) %>%
+    unique() %>%
+      as.list() %>%
+        map_chr(.f = sp.pa.test)
+```
+
+Write out the tibble containing one column for the presence/absence records of each Red Wood Ant species in each NFI plot:
+```{r,eval = FALSE}
+save(list = 'wood.ant.species.presence.absence.tb', file = '~/rwa/data/ants/Preparations_of_Ameisen_Data_2009-2017_pourWSL_22.03.2018_xlsx/wood.ant.species.presence.absence.tb.RData')
+```
+
+#### The Locations of the Observations of Each Red Wood Ant Species
+
+Gathering the data and joining on the plot coordinates:
+```{r}
+rwa.sp.pa.gath.tb <- gather(wood.ant.species.presence.absence.tb, key = 'Species', value = 'Presence',-CLNR,-Year) %>%
+  filter(Presence == 1)
+
+coords.tb <- select(correct.coordinates.tb, CLNR, X, Y)
+
+rwa.sp.pa.gth.crds.tb <- left_join(x = rwa.sp.pa.gath.tb, y = coords.tb, by = 'CLNR') %>%
+  mutate(Species.rn = case_when(
+                        Species == "Formica aquilonia_Binary.PA"    ~ "Formica aquilonia",
+                        Species == "Formica lugubris_Binary.PA"     ~ "Formica lugubris",
+                        Species == "Formica paralugubris_Binary.PA" ~ "Formica paralugubris",
+                        Species == "Formica polyctena_Binary.PA"    ~ "Formica polyctena",
+                        Species == "Formica pratensis_Binary.PA"    ~ "Formica pratensis",
+                        Species == "Formica rufa_Binary.PA"         ~ "Formica rufa"
+                      )
+        )
+```
+
+```{r}
+group_by(rwa.sp.pa.gth.crds.tb, Species.rn) %>%
+  count() %>%
+    rename(Species = Species.rn)
+```
+
+```{r}
+group_by(rwa.sp.pa.gth.crds.tb, Species.rn, Species) %>%
+  count() %>%
+    ggplot(aes(x = fct_reorder(Species.rn, n, .desc = TRUE), y = n)) +
+      geom_col() +
+      theme_bw() +
+      scale_fill_discrete(guide = FALSE) +
+      labs(x = 'Species', y = 'Number of Plots in which Species is Present') +
+      theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust = 0.5))
+```
+
+#### Presence/Absence of Red Wood Ant Mounds in NFI Plots
+
+Creating a tibble with rows for each combination of `CLNR` and `Year` in which Red Wood Ant mounds were detected and columns for the presence/absence of Red Wood Ants and the number of Red Wood Ants mounds:
+
+Quick Checks:
+```{r}
+pull(wood.ants.from.mounds.tb, CLNR) %>%
+  anyNA() %>%
+    if_else(condition = ., true = 'test failed', false = 'test passed')
+```
+
+```{r}
+test.a <- pull(wood.ants.from.mounds.tb, Wood.Ant) %>%
+  unique()
+
+if_else(condition = (test.a == 'x' & length(test.a) == 1), true = 'test passed', false = 'test failed')
+```
+
+```{r}
+Year.Plot.RWA.PA.M.tb <- select(wood.ants.from.mounds.tb, Year, CLNR, Mound.ID, Wood.Ant, Species) %>%
+  mutate(RWA.Sample.Presence = 1) %>%
+    group_by(Year, CLNR) %>%
+      summarise(RWA.Presence = unique(RWA.Sample.Presence), 
+                N.Mounds = length(unique(Mound.ID)),
+                N.Species = length(unique(Species))) %>%
+        ungroup()
+
+slice(.data = Year.Plot.RWA.PA.M.tb, 1:10)
+```
+
+Number of Species Per Plot in which Red Wood Ants mounds were detected:
+
+```{r}
+group_by(Year.Plot.RWA.PA.M.tb, N.Species) %>%
+  count()
+```
+
+Thus there was only one plot from which more than one species of Red Wood Ants was recorded.
+
+```{r}
+group_by(wood.ants.from.mounds.tb, CLNR, Year) %>%
+  summarise(N.Species = length(unique(Species))) %>%
+    filter(N.Species > 1)
+```
+
+Examining the observations from this plot we see the two specimens of different species were collected from different mounds.
+```{r}
+filter(wood.ants.from.mounds.tb,  CLNR == 57155) %>%
+  select(CLNR, Year, Date, Mound.ID, Species)
+```
+However we also see that due to uncertainty in one of the species identifications it is possible that both individuals were of the same species.
+Given that all other plot that contained Red Wood Ant mounds only contained mounds of a single species the odds are in favour of this individual for which the identification was uncertain belonging to the same species as the other specimen from this plot.
+
+Number of Mounds per Plot in which Red Wood Ants were detected:
+
+```{r}
+group_by(Year.Plot.RWA.PA.M.tb, N.Mounds) %>%
+  count()
+```
+
+```{r}
+ggplot(data = Year.Plot.RWA.PA.M.tb, aes(x = N.Mounds)) +
+  geom_histogram(bins = 5) +
+  theme_bw() +
+  labs(x = 'Number of Mounds per Plot', y = 'Number of Plots')
+```
+
+#### Number of NFI plots in which Red Wood Ants were detected between 2009 and 2017
+
+```{r}
+nrow(Year.Plot.RWA.PA.M.tb)
+```
+
+**thus 290 NFI plots had RWA mounds in them in the year in which they were visited by the NFI survey**
+i.e. there are 290 unique combinations of `Year` and `CLNR` from which a confirmed identification of a RWA mound was made
+
+```{r}
+RWA.Plot.Presences <- Year.Plot.RWA.PA.M.tb
+
+slice(.data = RWA.Plot.Presences, 1:10)
+```
+
+```{r}
+summary(RWA.Plot.Presences)
+```
+
+There is one row for each unique `CLNR` in this tibble
+```{r}
+nrow(RWA.Plot.Presences) == length(unique(pull(RWA.Plot.Presences,CLNR)))
+```
+thus none of these 290 plots were revisited in subsequent years & found to have RWA mounds during the period spanned by the data (2009-2017)
+
+#### checking my filtering against Martijn's filtering:
+
+Martijn reported 203 NFI plots with Red Wood Ant mounds from 2009-2014
+
+If I subset to these years I get the same number of plots with one or more RWA mounds present
+
+```{r}
+filter(RWA.Plot.Presences, Year < 2015) %>%
+  nrow()
+```
+
+### Wood Ant Species Presence/Absence in Plots each Year
+How many plots were found to contain Red Wood Mounds each year?
+
+```{r}
+rwa.dections.per.year.p <- group_by(RWA.Plot.Presences, Year) %>%
+    summarise(Plots.with.RWA = sum(RWA.Presence)) %>%
+      ggplot(data = ., aes(x = Year, y = Plots.with.RWA)) +
+        stat_identity(geom = 'bar') +
+          ylim(0,50) +
+            theme_bw() +
+              scale_x_continuous(breaks = 2009:2017) +
+                labs(y = 'Number of NFI Plots in which Red Wood Ant Mounds were Detected')
+
+rwa.dections.per.year.p 
+```
+
+```{r}
+group_by(RWA.Plot.Presences, Year) %>%
+  summarise(Plots.with.RWA = sum(RWA.Presence)) %>%
+    knitr::kable()
+
+```
+
+### Adding in the records of Red Wood Ant absences and NAs from the Ants ID data:
+
+```{r}
+RWA.Plot.Presences %>%
+  pull(RWA.Presence) %>%
+    unique() %>%
+      knitr::kable()
+```
+
+The tibble 'RWA.Plot.Presences' only contains records of Red Wood Ant mound Presences in NFI plots.
+
+The tibble 'ameisen.tb' contains all ant observations (all species) from mounds and trees.
+
+```{r}
+ameisen.mcn.tb <- mutate(ameisen.tb, CLNR = CLNR, # rename the columns 
+                         Year = JAHR,
+                         Date = as_datetime(DATUM),
+                         Mound.ID = AMEISENHAUFENPROBENR,
+                         Wood.Ant = FdB,
+                         Species = Détermination,
+                         Comment = Remarques,
+                         Tree.Species = BAUMART,
+                         DBH = BHD,
+                         Tree.Size = UMFANG,
+                         Tree.ID = AMEISENPROBENRBAUM
+                  ) %>%
+                    select(CLNR,
+                           Year,
+                           Mound.ID,
+                           Wood.Ant,
+                           Species,
+                           Comment)
+
+slice(.data = ameisen.mcn.tb, 1:10)
+```
+
+### Joining the tibble of Red Wood Ant Presence Records to a tibble containing Red Wood Ant absence records and NAs from the Ants' ID data:
+
+#### combinations of CLNR and Year from the Ants data that lack ant mounds of any sort (primarily ants collected from trees):
+
+```{r}
+P.Y.C.1 <- group_by(ameisen.mcn.tb, CLNR, Year) %>%
+  summarise(N.Records = n(),
+            N.NA.Mound.ID = sum(is.na(Mound.ID))) %>%
+    filter(N.Records == N.NA.Mound.ID) %>%
+      ungroup() %>%
+        mutate(Plot.Year.Class.1 = 'No Ant Mound')
+
+slice(.data = P.Y.C.1, 1:10)
+```
+
+Thus 152 plots from which ants were collected had zero Red Wood Ant Mounds recorded:
+```{r}
+nrow(P.Y.C.1)
+```
+
+#### all levels of `Species`:
+```{r}
+pull(ameisen.mcn.tb, Species) %>%
+  unique()
+```
+two entries in 'Species' column that equate to failed species ID:
+ 
+ - `NA`
+ - `détermination pas notée !`
+
+#### ant mound presences without confirmed red wood ant presences:
+combinations of CLNR and Year that had:
+
+ * Only Non RWA Mounds Present:
+    + each mound had one or more ant sample identified to a level sufficient to rule out RWA presence
+    + this equates to **RWA absence**
+    
+ * Only Mounds of Unknown Ants Species Present:
+    + no mound had an ant sample identified to a level sufficient to either confirm or refute RWA presence (i.e. all entries had `NA` or `détermination pas notée !` in `Species` column)
+    + this equates to missing RWA Presence/Absence i.e. **RWA NA**
+ 
+ * One or more Ant Mounds of Unknown Species & No Confirmed RWA Mounds:
+    + one or more ant mounds which lacked any samples identified to a level sufficient to rule out RWA presence (i.e. all entries from that mound had `NA` or `détermination pas notée !` in `Species` column)
+    + one or more mounds with an associated sample that was identified to a level sufficient to refute RWA presence 
+    + of the mounds which had samples that were identified to a level sufficient to confirm or refute RWA presence only samples of non RWA species were detected
+    + this equates to missing RWA Presence/Absence i.e. **RWA NA**
+
+```{r}
+P.Y.C.2 <- anti_join(x = ameisen.mcn.tb, y = RWA.Plot.Presences, by = c('CLNR', 'Year')) %>%
+  filter(!is.na(Mound.ID)) %>%
+    group_by(CLNR, Year, Mound.ID) %>%
+      summarise(N.Records = n(),
+                N.Non.RWA.IDs = sum(is.na(Wood.Ant)),
+                N.Failed.Species.IDs = sum(c(is.na(Species),
+                                             str_detect(string = Species, pattern = 'NA'),
+                                             str_detect(string = Species, pattern = 'détermination pas')
+                                            ),
+                                           na.rm = TRUE
+                                          )
+               ) %>%
+        filter((N.Records == N.Non.RWA.IDs) # all records from mound not indicated as red wood ant mounds (should be redundant due to above anti_join )
+              ) %>%
+          mutate(Mound.Class = case_when(
+                                 (N.Records > N.Failed.Species.IDs) ~ 'Non RWA Ant Mound',  # at least one successful species ID from mound
+                                 (N.Records == N.Failed.Species.IDs) ~ 'Species Unknown Ant Mound' # no specimen from mound was successfully identified
+                               )
+          ) %>%
+              ungroup() %>%
+                group_by(CLNR, Year) %>%
+                  summarise(N.U.MC = length(unique(Mound.Class)),
+                            NRWAM.Present = ('Non RWA Ant Mound' %in% Mound.Class),
+                            SUAM.Present = ('Species Unknown Ant Mound' %in% Mound.Class)
+                  ) %>%
+                    mutate(Plot.Year.Class.2 = case_when(
+                      ((N.U.MC == 1) & (NRWAM.Present == TRUE)) ~ 'Only Non RWA Mounds', 
+                      ((N.U.MC == 1) & (SUAM.Present == TRUE)) ~ 'Only Unknown Species Mounds', 
+                      ((N.U.MC > 1) & (SUAM.Present == TRUE)) ~ 'One or more Ant Mounds of Unknown Species, No Confirmed RWA Mounds'
+                      )
+                    ) %>% 
+                      ungroup()
+```
+
+To recap:
+ - `P.Y.C.1` contains & uniquely identifies:
+    + plot:year combinations that lacked any ant mounds
+ - `P.Y.C.2` contains & uniquely identifies:
+    + plot:year combinations with only non Red Wood Ant mounds present
+    + plot:year combinations with only ant mounds of unknown species present
+    + plot:year combinations with no confirmed Red Wood Ant mounds present and one or more ant mounds of unknown species
+ - `RWA.Plot.Presences`:
+    + plot:year combinations that contained 1 or more Red Wood Ant mounds
+    
+Thus `P.Y.C.1`, `P.Y.C.2` and `RWA.Plot.Presences` should contain all Year:Plot combinations from our ants data
+
+let's check:
+
+first let's create a tibble with just the unique combinations of `Year` and `CLNR` from `ameisen.mcn.tb`
+```{r}
+Unique.Year.CLNR <- group_by(ameisen.mcn.tb, Year, CLNR) %>%
+  summarise(Records = n()) %>%
+    ungroup()
+
+slice(.data = Unique.Year.CLNR, 1:10)
+```                                               
+
+next let's join on each of `P.Y.C.1`, `P.Y.C.2` and `RWA.Plot.Presences` placing the column `Plot.Classes` from each of these tibbles in a separate column in the newly joined tibble.
+let's name these columns `Plot.Year.Class.1`, `Plot.Year.Class.2` and `Plot.Year.Class.3` respectively
+```{r}
+Unique.Year.CLNR.1 <- select(P.Y.C.1, CLNR, Year, Plot.Year.Class.1) %>%
+  right_join(x = ., y = Unique.Year.CLNR, by = c('Year', 'CLNR'))
+
+Unique.Year.CLNR.2 <- select(P.Y.C.2, CLNR, Year, Plot.Year.Class.2) %>%
+  right_join(x = ., y = Unique.Year.CLNR.1, by = c('Year', 'CLNR'))
+```
+
+```{r}
+colnames(RWA.Plot.Presences)
+
+summary(pull(RWA.Plot.Presences, RWA.Presence))
+```
+
+```{r}
+Unique.Year.CLNR.3 <- mutate(RWA.Plot.Presences, Plot.Year.Class.3 = case_when(
+   (RWA.Presence == 1) ~ 'Red Wood Ant Mound',
+   (is.na(RWA.Presence)) ~ 'NA in RWA.Presence',
+   (!(RWA.Presence == 1)) ~ 'Red Wood Ant Mound Absence'
+   )
+ ) %>%
+   select(CLNR, Year, Plot.Year.Class.3) %>%
+     right_join(x = ., y = Unique.Year.CLNR.2, by = c('CLNR', 'Year'))
+
+slice(.data = Unique.Year.CLNR.3, 1:10)
+```
+
+```{r}
+summary(Unique.Year.CLNR.3)
+```
+
+Each of `Plot.Year.Class.1`, `Plot.Year.Class.2` and `Plot.Year.Class.3` should only have non NA values in rows where both other columns both have only NA values 
+
+```{r}
+filter(Unique.Year.CLNR.3, !is.na(Plot.Year.Class.1)) %>% 
+  summarise(N.Row = n(),
+            PYC.1.N.NA = sum(is.na(Plot.Year.Class.1)),
+            PYC.2.N.NA = sum(is.na(Plot.Year.Class.2)), 
+            PYC.3.N.NA = sum(is.na(Plot.Year.Class.3)))
+```
+check passed
+
+```{r}
+filter(Unique.Year.CLNR.3, !is.na(Plot.Year.Class.2)) %>% 
+  summarise(N.Row = n(),
+            PYC.1.N.NA = sum(is.na(Plot.Year.Class.1)),
+            PYC.2.N.NA = sum(is.na(Plot.Year.Class.2)), 
+            PYC.3.N.NA = sum(is.na(Plot.Year.Class.3)))
+```
+check passed
+
+
+```{r}
+filter(Unique.Year.CLNR.3, !is.na(Plot.Year.Class.3)) %>% 
+  summarise(N.Row = n(),
+            PYC.1.N.NA = sum(is.na(Plot.Year.Class.1)),
+            PYC.2.N.NA = sum(is.na(Plot.Year.Class.2)), 
+            PYC.3.N.NA = sum(is.na(Plot.Year.Class.3)))
+```
+check passed
+
+
+Combining  `Plot.Year.Class.1`, `Plot.Year.Class.2` & `Plot.Year.Class.3`
+
+```{r}
+Candidate.RWA.P.A.NA <- mutate(Unique.Year.CLNR.3, PYC.123 = case_when(
+  ((!is.na(Plot.Year.Class.1)) & is.na(Plot.Year.Class.2)    & is.na(Plot.Year.Class.3))    ~ Plot.Year.Class.1,
+  (is.na(Plot.Year.Class.1)    & (!is.na(Plot.Year.Class.2)) & is.na(Plot.Year.Class.3))    ~ Plot.Year.Class.2,
+  (is.na(Plot.Year.Class.1)    & is.na(Plot.Year.Class.2)    & (!is.na(Plot.Year.Class.3))) ~ Plot.Year.Class.3
+  )
+  ) %>%
+    select(CLNR, Year, PYC.123)
+
+slice(.data = Candidate.RWA.P.A.NA, 1:10)
+```
+
+some checks:
+```{r}
+summarise(Candidate.RWA.P.A.NA,
+          NA.in.CLNR = anyNA(CLNR), 
+          NA.in.Year = anyNA(Year), 
+          NA.in.PYC.123 = anyNA(PYC.123)
+  )
+```
+
+```{r}
+pull(Candidate.RWA.P.A.NA, PYC.123) %>%
+  unique()
+```
+
+Creating a column that codes for Red Wood Ant Mound Presence/Absence/NA for each unique combination of `Year` and `CLNR` in the ant mounds data:
+```{r}
+RWA.P.A.U <- mutate(.data = Candidate.RWA.P.A.NA,
+                    RWAM.P.A.NA = case_when(
+                      PYC.123 == 'Red Wood Ant Mound' ~ 'Present',
+                      PYC.123 == 'No Ant Mound' ~ 'Absent',
+                      PYC.123 == 'Only Non RWA Mounds' ~ 'Absent',
+                      PYC.123 == 'Only Unknown Species Mounds' ~ 'Unknown',
+                      PYC.123 == 'One or more Ant Mounds of Unknown Species, No Confirmed RWA Mounds' ~ 'Unknown'
+                    )
+             ) %>%
+               select(Year, CLNR, RWAM.P.A.NA)
+
+slice(.data = RWA.P.A.U, 1:10)
+```
+
+Examining the number of unique combinations of `Year` and `CLNR` with each value of `RWAM.P.A.NA` (Red Wood Ant Mound Present / Absent / Unknown)
+```{r}
+group_by(RWA.P.A.U, RWAM.P.A.NA) %>%
+  count()
+```
+
+Examining the plots in which it is unknown whether Red Wood Ant mounds were present:
+```{r}
+filter(RWA.P.A.U, RWAM.P.A.NA == 'Unknown') %>%
+  rename(JAHR = Year) %>%
+    left_join(x = ., y =  ameisen.tb, by = c('CLNR', 'JAHR')) %>%
+      select(JAHR, CLNR, RWAM.P.A.NA , AMEISENHAUFENPROBENR, Détermination, Remarques) %>%
+        knitr::kable()
+```
+
+échantillon pas reçu = sample not received
+
+determination not noted! = determination not noted!
+
+I am satisfied that we cannot conclude from these data whether or not Red Wood Ant mounds were present at these plots.
+
+
+For modelling we will need to code RWA presence/absence/unknown as:
+ 
+ * presence = 1
+ * absence = 0
+ * unknown = NA
+ 
+```{r}
+RWAM.PA.tb <- mutate(RWA.P.A.U,
+                     RWAM.PA = case_when(
+                       RWAM.P.A.NA == 'Present' ~ as.integer(x = 1),
+                       RWAM.P.A.NA == 'Absent' ~ as.integer(x = 0),
+                       RWAM.P.A.NA == 'Unknown' ~ as.integer(x = NA)
+                    )
+               )
+
+group_by(RWAM.PA.tb, RWAM.PA) %>%
+  count()
+```
+ 
+some checks
+
+Presences
+```{r}
+Presences.1 <- filter(RWA.P.A.U, RWAM.P.A.NA == 'Present') %>%
+  select(CLNR, Year) %>%
+    arrange(CLNR, Year)
+
+Presences.2 <- RWA.Plot.Presences %>%
+  select(CLNR, Year) %>%
+    arrange(CLNR, Year)
+
+if_else(identical(Presences.1, Presences.2), 'check passed', 'check failed')
+```
+
+Absences
+
+```{r}
+pull(P.Y.C.2, Plot.Year.Class.2) %>%
+  unique()
+```
+
+```{r}
+Absent.1.1 <- select(P.Y.C.1, Year, CLNR)
+
+Absent.1.2 <- filter(P.Y.C.2, Plot.Year.Class.2 == 'Only Non RWA Mounds') %>%
+    select(Year, CLNR)
+    
+Absent.1 <- bind_rows(Absent.1.1, Absent.1.2) %>%
+  arrange(Year, CLNR)
+
+Absent.2 <- filter(RWA.P.A.U, RWAM.P.A.NA == 'Absent') %>%
+  select(Year, CLNR) %>%
+    arrange(Year, CLNR)
+
+if_else(identical(Absent.1, Absent.2), 'check passed', 'check failed')
+```
+
+### Adding in the observations of Red Wood Ant mound absences associated with NFI plots that were searched for ants where no ants or ant mounds where found
+
+`RWAM.PA.tb` only contains data from plots from which one or more ant samples were collected (either from a mound or from a tree).
+Consequently all other NFI plots that were search for ant mounds can safely be considered to be observations of Red Wood Ant mound absences.
+
+
+#### Load the unprocessed data from the NFI plots
+```{r}
+raw.plot.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Plotdaten_2009-2017_Rohdaten.xlsx', sheet = 'SQL Results')
+```
+
+The variable `AMHAUSST` codes for whether the plot was searched for ant mounds:
+
+| AMHAUSST | Meaning                    |
+|---------:|---------------------------:|
+|   -1     | plot not searched for ants |
+|    1     | plot searched for ants     |
+
+
+The variable `WNWENTTXT` codes for the classification of the plot:
+
+| WNWENTTXT            | Meaning         |
+|---------------------:|----------------:|
+| Nichtwald            | Not Forest      |
+| Wert nicht ermittelt | Missing Data    |
+| Gebüschwald          | Scrub Forest    |
+| Wald                 | Forest          |
+
+
+```{r}
+group_by(raw.plot.tb, AMHAUSST, WNWENTTXT) %>%
+  summarise(N.Plots = n())
+```
+This table shows that `WNWENTTXT == Nichtwald` plots were not searched for ant mounds.
+This table also shows that plots missing an entry for `WNWENTTXT` were not searched for ant mounds.
+Thus it will be important to emphasize in the description of our methodology that we are modelling the occurrence of Red Wood Ant mounds within Swiss forests.
+
+Checking the number of unique `AMHAUSST` values associated with any one `CLNR`
+```{r}
+group_by(raw.plot.tb, CLNR) %>%
+  summarise(N.AMHAUSST = length(unique(AMHAUSST))) %>%
+    pull(N.AMHAUSST) %>%
+      unique()
+```
+thus every `CLNR` as one and only one `AMHAUSST` value associated with it.
+
+```{r}
+Ant.Survey.tb <- mutate(raw.plot.tb, Year = lubridate::year(DATUM)) %>%
+  select(Year, CLNR, AMHAUSST, WNWENTTXT) %>%
+    filter(AMHAUSST == 1)
+
+group_by(Ant.Survey.tb, AMHAUSST, WNWENTTXT) %>%
+  count()
+```
+
+```{r}
+nrow(Ant.Survey.tb)
+```
+
+```{r}
+slice(RWAM.PA.tb, 1:10)
+```
+	
+```{r}
+RWAM.PA.Full.tb <- left_join(x = Ant.Survey.tb, y = RWAM.PA.tb, by = c('Year', 'CLNR')) %>%
+    mutate(RWAM.PA.Full = case_when(
+      RWAM.P.A.NA == "Present" ~ as.integer(1),
+      RWAM.P.A.NA == "Absent"  ~ as.integer(0),
+      RWAM.P.A.NA == "Unknown" ~ as.integer(NA),
+      is.na(RWAM.P.A.NA)       ~ as.integer(0)      
+    )
+  )
+
+group_by(RWAM.PA.Full.tb, RWAM.PA.Full, RWAM.P.A.NA) %>%
+  count()
+```
+
+Examining the distribution of Red Wood Ant Mounds Presences and Absences among Wald and Gebüschwald plots:
+
+```{r}
+mutate(RWAM.PA.Full.tb, 
+       Red.Wood.Ant.Mounds = case_when( RWAM.PA.Full == 0   ~ 'Absent',
+                                        RWAM.PA.Full == 1   ~ 'Present',
+                                        is.na(RWAM.PA.Full) ~ 'Missing Data'
+                                      )
+      ) %>%
+  group_by(WNWENTTXT, RWAM.PA.Full, Red.Wood.Ant.Mounds) %>%
+    summarise(N.Plots = n())
+```
+
+```{r}
+n.presences <- filter(RWAM.PA.Full.tb, RWAM.PA.Full == 1) %>%
+  nrow()
+
+n.known.presence.absence <- filter(RWAM.PA.Full.tb, RWAM.PA.Full == 1 | RWAM.PA.Full == 0) %>%
+  nrow()
+
+100*n.presences/n.known.presence.absence
+```
+
+**~4.6% of the observations are presences.**
+
+This class imbalance is severe enough that it will need to be addressed in the analysis.
+
+For our analysis we can only use the plots with confirmed presences or absences of Red Wood Ants mounds.
+We must also decide whether we wish to model plots from both `Wald` and `Gebüschwald` or whether we wish to restrict our analysis to the observations of the `Wald` plots.
+Martijn choose to restrict his analysis to the `Wald` plots writing: 
+
+"I am inclined to drop WNWENT, and thus effectively limit the analysis to "forest" according to LFI definition, and exclude "shrub forest", because it is interesting to see how the structural diversity and biotope values developed by LFI perform in predicting ants (it is effectively a test of the quality of these indices)."
+
+We can make a final decision on this issue when I have joined all the explanatory variables to the response observations.
+Consequently, I export a tibble containing the observations of Red Wood Ant mound presence/absence/unknown status for each of the NFI plots that were searched for ant mounds.
+
+`RWAMO.tb` = Red Wood Ant Mound Occurrence Tibble
+```{r}
+RWAMO.tb <- left_join(x = RWAM.PA.Full.tb, y = correct.coordinates.tb, by = 'CLNR') %>%
+  select(-ZENTR_STATUS, -RWAM.PA, -RWAM.P.A.NA) %>%
+    rename(RWAM.PA = RWAM.PA.Full)
+```
+
+| RWAM.PA.Full | Meaning                                           |
+|-------------:|--------------------------------------------------:|
+|  0           | No Red Wood Ant Mounds Present in Plot            |
+|  1           | One or More Red Wood Ant Mounds Present in Plot   |
+|  NA          | Ant Mounds of Unknown Species Present in Plot     |
+
+```{r}
+group_by(RWAMO.tb, WNWENTTXT, RWAM.PA) %>%
+  count()
+```
+
+```{r}
+group_by(RWAMO.tb, RWAM.PA) %>%
+  count()
+```
+
+```{r, eval = FALSE}
+save(list = 'RWAMO.tb', file = '~/rwa/data/ants/Preparations_of_Ameisen_Data_2009-2017_pourWSL_22.03.2018_xlsx/Red_Wood_Ant_Mound_Occurence.RData')
+```
+
+## Overlaying points for Red Wood Ant Mound Presence/Absence onto Hillshaded Terrain
+
+```{r}
+relief.rast <- raster::raster('~/rwa/data/DEM/relief/Relief_1000_clip.tif')
+
+relief.rast
+
+relief.df <- data.frame(sp::coordinates(relief.rast))
+
+sp::coordinates(relief.df) ~x+y
+
+relief.crds <- sp::coordinates(relief.df)
+
+relief.tb <- tibble(X = relief.crds[,'x'],
+                    Y = relief.crds[,'y'], 
+                    relief = raster::extract(x = relief.rast, y = relief.df)
+             )
+
+RWAMO.tb.2 <- mutate(RWAMO.tb,
+                     Red.Wood.Ant.Mound = case_when(
+                                            RWAM.PA == 0 ~ 'Absent',
+                                            RWAM.PA == 1 ~ 'Present',
+                                            is.na(RWAM.PA) ~ 'Unknown'
+                                          ),
+                     Point.Size = case_when(
+                                    RWAM.PA == 0 ~ 1,
+                                    RWAM.PA == 1 ~ 2,
+                                    is.na(RWAM.PA) ~ 1.5
+                                  ),
+                     relief = 0
+              )
+```
+
+Overlaying the presence/absence of Red Wood Ant mounds in NFI plots onto a hillshaded terrain surface:
+```{r, fig.width = 12, fig.height = 9}
+rwam.pa.terrain.p <- ggplot(data = relief.tb, aes(x = X, y = Y, fill = relief)) +
+  geom_raster(alpha = 0.25) +
+  scale_fill_gradientn(colours = grey(level = seq(from = 0, to = 1, length.out = 1e3))) +
+  coord_equal() +  
+  geom_point(data = RWAMO.tb.2, aes(x = X, y = Y, shape = Red.Wood.Ant.Mound, colour = Red.Wood.Ant.Mound, size = Point.Size), alpha = 1) + 
+  scale_size(range = c(0.5,1)) +
+  scale_colour_brewer(type = 'qual', palette = 3) + 
+  guides(fill = FALSE,
+         size = FALSE,
+         shape = guide_legend(override.aes = list(size = 3))
+  ) +
+  labs(x = 'Easting', y = 'Northing', shape = 'Red Wood\nAnt Mounds', colour = 'Red Wood\nAnt Mounds') +
+  theme_bw() +
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  scale_y_continuous(labels = function(x) format(x, scientific = TRUE))
+
+rwam.pa.terrain.p
+```
+
+Overlaying the presences of mounds from individual species onto the hillshaded terrain surface:
+```{r}
+rwa.sp.pa.gth.crds.tb.2 <- mutate(rwa.sp.pa.gth.crds.tb, relief = 0)
+
+rwam.sp.pa.terrain.p <- ggplot(data = relief.tb, aes(x = X, y = Y, fill = relief)) +
+  geom_raster(alpha = 0.25) +
+  scale_fill_gradientn(colours = grey(level = seq(from = 0, to = 1, length.out = 1e3))) +
+  coord_equal() +  
+  scale_size(range = c(0.5,1)) +
+  guides(fill = FALSE,
+         size = FALSE,
+         shape = guide_legend(override.aes = list(size = 3))
+  ) +
+  labs(x = 'Easting', y = 'Northing', shape = 'Red Wood\nAnt Mounds', colour = 'Red Wood\nAnt Mounds') +
+  theme_bw()
+```
+
+Ploting the presences of individual species in NFI plots:
+```{r, fig.width = 12, fig.height = 8}
+rwam.sp.pa.terrain.p.v1 <- rwam.sp.pa.terrain.p +
+  geom_point(data = rwa.sp.pa.gth.crds.tb.2, aes(x = X, y = Y, shape = Species.rn), size = 1) +
+  scale_shape_discrete(solid = FALSE) +
+  theme_bw() +
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  scale_y_continuous(labels = function(x) format(x, scientific = TRUE))
+
+rwam.sp.pa.terrain.p.v1
+```
+
+```{r}
+count.species.presences.tb <- group_by(rwa.sp.pa.gth.crds.tb.2, Species.rn) %>%
+  count() %>%
+    mutate(relief = 0,
+           facet.label = paste0('n = ',n)
+    )
+
+count.species.presences.tb
+```
+
+Faceting by Species:
+```{r, fig.width = 12, fig.height = 12}
+rwam.sp.pa.terrain.fct.prtrt.p <- rwam.sp.pa.terrain.p +
+  geom_point(data = rwa.sp.pa.gth.crds.tb.2, aes(x = X, y = Y), shape = 1, size = 1, stroke = 0.5) +
+  geom_text(data = count.species.presences.tb, aes(label = facet.label), x = 8e5, y = 2.8e5) + 
+  facet_wrap(. ~ Species.rn, nrow = 3) +
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  scale_y_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  scale_shape_discrete(solid = FALSE)
+
+rwam.sp.pa.terrain.fct.prtrt.p
+```  
+
+End of Preparation of Red Wood Ant Mound Presence/Absence data.
+
+```{r, echo = FALSE, eval = FALSE}
+save.image('~/rwa/data/ants/Preparations_of_Ameisen_Data_2009-2017_pourWSL_22.03.2018_xlsx/Red_Wood_Ant_Mound_Occurence_Full_Workspace.RData')
+```

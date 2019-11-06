@@ -1,0 +1,4334 @@
+---
+title: "S2 Preparation of National Forestry Inventory Field Data"
+author: "Author Blank for Double Blind Peer Review"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Introduction
+In this file I prepare the National Forestry Inventory (hereafter NFI) field (and field derived) data for use as explanatory variables in models of Red Wood Ant mound distributions.
+Sections of this file have been adapted from the data preparation of [Vandegehuchte et al. 2017](https://doi.org/10.1016/j.biocon.2017.06.008).
+
+The data preparation I have performed here is organised as follows.
+First, I filter out the observations of plots which were not assessed for Red Wood Ant Mound presence or absence.
+I then work through a selection of NFI variables that are potentially relevant to the distribution of Red Wood Ant mounds.
+These variables include the set used in Vandegehuchte et al. along with additional variables that describe various disturbances of the NFI plots that have potential to be relevant to Red Wood Ant mound distributions.
+After examining each variable I choose whether to include or exclude it from our analysis.
+My decision regarding whether to include a variable in our analysis is based primarily on the number of plots at which observations of this variable are missing and whether these missing values can be infilled using other related variables from the database.
+I have also aggregated the levels of categorical variables in cases where some levels contained very few observations.
+In each case I have aimed to produce new aggregated levels such that no level contains fewer than 100 observations.
+One key differences in the data preparation I conduct here compared to that of Vandegehuchte et al. stems from our contrasting preparations of interval censored data. 
+I have converted interval censored variables to numeric variables by placing observations at the mid point of the interval from which they were drawn.
+In contrast, Vandegehuchte et al. converted these intervals to the levels of unordered categorical variables. 
+I am taking the mid points of the intervals and using these as observations of numeric covariates so that we can retain the ordering of these data and something of their spacing seeing as the intervals are not all the same width. 
+While sophisticated method exist for modelling interval censored data I have been unable to find any such methods that are also appropriate for application to high dimensional logistic regression problems.
+My plan is to use random forests to model the occurrence of Red Wood Ant mounds.
+Random forests are collections of many decorrelated decision trees and thus having groups of observations with identical values for a particular explanatory variable is less of an issue than it would be for multiple linear regression based techniques.
+The decisions trees of a random forest will still be able to partition the data based on the values of such numeric variables that are derived from interval censored variables and by this method they will be able to do so using the ordering and relative spacing of the intervals.
+This does have the consequence that the results of our analysis will not be directly comparable to those of Vandegehuchte et al.
+
+The NFI variable names are all abbreviations which are expanded in the [NAFIDAS](http://lfa.wsl.ch/login.php) tables.
+The sections below each examine and prepare a variable or a collection of related variables from the NFI database.
+In all data sets used here plots are uniquely identified by a numeric code in the a column named `CLNR`.
+ 
+## R packages used:
+In this data preparation I make heavy use of the [tidyverse](https://www.tidyverse.org/) suite of packages.
+I also use `readxl` for reading data into R from Excel files and `visdat` for visualising the structures of missing values among our observations and variables.
+
+```{r message=FALSE, warning=FALSE}
+library(readxl)
+library(visdat)
+library(tidyverse)
+```
+
+### Raw (Unprocessed) Plot Data:
+```{r}
+raw.plot.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Plotdaten_2009-2017_Rohdaten.xlsx', sheet = 'SQL Results')
+````
+
+#### Subsetting to plots that were searched for Red Wood Ant Mounds
+This file documents my preparation of explanatory variables for models of Red Wood Ant mound occurrence in NFI plots.
+Only a subset of the NFI plots (CLNR) were searched for ant mounds.
+Consequently, I only need to prepare the observations of explanatory variables from plots that were searched for ant mounds.
+
+The variable *AMHAUSST = MID 834* codes for whether a plot (CLNR) was searched for ant mounds.
+
+AMHAUSST ==  1 implies that the plot (CLNR) was searched for ant mounds
+AMHAUSST == -1 implies that the plot (CLNR) was *not* searched for ant mounds
+
+It is informative here to examine the distribution of plots that were and were not searched for ant mounds among the different classes of forest described by the variable `WNWENT` and its equivalent `WNWENTTXT` (`WNWENT` contains numeric codes and `WNWENTTXT` contains the same but using text codes).
+
+```{r}
+group_by(raw.plot.tb, AMHAUSST, WNWENTTXT) %>%
+  summarise(N.Plots = n())
+```
+
+Thus `WNWENTTXT == Nichtwald` (not forest) plots were not assessed for ant mounds and plots that are missing values for `WNWENTTXT` were also not assessed for ant mounds.
+Whereas all Gebüschwald (scrub forest) and Wald (forest) plots were assessed for Red Wood Ant mounds.
+
+Creating a subset of the Raw Plot Data that contains only the plots that were searched for ants mounds:
+```{r}
+RPA.raw.plot.tb <- filter(raw.plot.tb, AMHAUSST ==  1)
+
+nrow(RPA.raw.plot.tb)
+```
+
+#### WNWENT = MID 816 = Forest / Scrub Forest / Not Forest 
+
+```{r}
+group_by(RPA.raw.plot.tb, WNWENTTXT) %>%
+  count()
+```
+
+Thus of the 6357 plots that were searched for ants mounds 315 (~4.96%) were classified as Scrub Forest (`Gebüschwald`) while the remainder were classified as Forest (`Wald`).
+
+Vandegehuchte et al. restricted their analysis to the data collected from NFI plots classified as `Wald`.
+
+
+Ploting the Wald/Gebushwald plots that were searched for ant mounds on a hillshaded terrain surface:
+
+```{r}
+Coords.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Richtige Koordinaten der besuchten Probeflächen_2009-2017_Rohdaten.xlsx')
+
+relief.rast <- raster::raster('~/rwa/data/DEM/relief/Relief_1000_clip.tif')
+
+relief.df <- data.frame(sp::coordinates(relief.rast))
+
+sp::coordinates(relief.df) ~x+y
+
+relief.crds <- sp::coordinates(relief.df)
+
+relief.tb <- tibble(X = relief.crds[,'x'],
+                    Y = relief.crds[,'y'], 
+                    relief = raster::extract(x = relief.rast, y = relief.df)
+             )
+
+WGB.tb <- left_join(x = RPA.raw.plot.tb, y = Coords.tb, by = 'CLNR') %>%
+  select(CLNR, X, Y, WNWENTTXT) %>%
+    mutate(relief = 0,
+           point.size = case_when(WNWENTTXT == 'Wald' ~ 0.5, 
+                                  WNWENTTXT == 'Gebüschwald' ~ 1
+                        )
+    )                                  
+```
+
+```{r, fig.width = 12, fig.height = 9}
+w.gb.terrain.p <- ggplot(data = relief.tb, aes(x = X, y = Y, fill = relief)) +
+  geom_raster(alpha = 0.25) +
+  scale_fill_gradientn(colours = grey(level = seq(from = 0, to = 1, length.out = 1e3))) +
+  coord_equal() +  
+  geom_point(data = WGB.tb, aes(x = X, y = Y, shape = WNWENTTXT, colour = WNWENTTXT, size = point.size)) + 
+  scale_size(range = c(0.25,0.75)) +
+  scale_colour_brewer(type = 'qual', palette = 1, direction = 1) +
+  guides(fill = FALSE,
+         size = FALSE,
+         shape = guide_legend(override.aes = list(size = 3))
+  ) +
+  labs(x = 'Easting', y = 'Northing', shape = 'Type', colour = 'Type') +
+  theme_bw() +
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  scale_y_continuous(labels = function(x) format(x, scientific = TRUE))
+
+w.gb.terrain.p
+```
+
+If we join on the prepared ant mound occurrence data we can see that 13 of the 290 plots which had Red Wood Ant mounds present were `Gebüschwald` plots.
+
+```{r}
+load('~/rwa/data/ants/Preparations_of_Ameisen_Data_2009-2017_pourWSL_22.03.2018_xlsx/Red_Wood_Ant_Mound_Occurence.RData')
+
+RWA.Mound.PA.tb <- select(RWAMO.tb, CLNR, RWAM.PA)
+
+left_join(RPA.raw.plot.tb, RWA.Mound.PA.tb, by = 'CLNR') %>%
+  mutate(Red.Wood.Ant.Mound = case_when( RWAM.PA == 1 ~ 'Present',
+                                         RWAM.PA == 0 ~ 'Absent',
+                                         is.na(RWAM.PA) ~ 'Unknown')
+  ) %>%          
+    group_by(WNWENTTXT, Red.Wood.Ant.Mound) %>%
+      count()
+```
+
+
+CLNR of Gebüschwald plots that contained ant mounds:
+```{r}
+CLNR.GB.RWAM <- left_join(RPA.raw.plot.tb, RWA.Mound.PA.tb, by = 'CLNR') %>%
+  filter(WNWENTTXT == 'Gebüschwald' & RWAM.PA == 1) %>%
+    pull(CLNR) %>%
+      sort()
+    
+CLNR.GB.RWAM
+```
+
+Anita was curious to know more about these Gebüschwald plots that contained Red Wood Ant Mounds.
+In particular she was interested to know which red wood ant species and tree species were present in these plots along with the elevation of these plots.
+
+Reading in the summary statistics for the Digital Elevation Model pixel values within the 12.5m disk buffers that were concentric with the NFI plots.
+
+```{r}
+dem.bs.12m <- read_excel(path = '/home/ben/rwa/data/dtm_buffer_summaries/_Tables/Buffer12mDisc.xlsx')
+```
+
+Filtering these data to the Gebüschwald plots that contained Red Wood Ant Mounds and selecting the mean elevation within the 12.5m disk buffers concentric these NFI plots:
+```{r}
+GB.RWAM.tb <- select(dem.bs.12m, CLNR, dem_5m_clip_master_mean) %>%
+  filter(CLNR %in% CLNR.GB.RWAM) %>%
+    rename(Elevation = dem_5m_clip_master_mean)
+```
+
+Reading in the Prepared Red Wood Ant Species Data and joining on the entries from these data to the summary tibble I am building for the Gebüschwald plots that contained Red Wood Ant Mounds:
+```{r}
+load('~/rwa/data/ants/Preparations_of_Ameisen_Data_2009-2017_pourWSL_22.03.2018_xlsx/wood.ant.species.presence.absence.tb.RData') 
+
+GB.RWAM.Sp.tb <- filter(wood.ant.species.presence.absence.tb, CLNR %in% CLNR.GB.RWAM) %>%
+  gather(-CLNR, -Year, key = 'Species', value = 'Presence') %>%
+    filter(Presence == 1) %>%
+      left_join(x = ., y = GB.RWAM.tb, by = 'CLNR') %>%
+        separate(col = Species, into = c('Species.Part.1', 'Species.Part.2'), sep = '\\_', remove = FALSE) %>%
+          select(CLNR, Species.Part.1, Elevation) %>%
+            rename(Species = Species.Part.1) %>%
+              arrange(Elevation)
+```
+
+Reading in the data about the upper layer of trees in the NFI plots and joining the appropriate rows from these data to the summary tibble I am building for the Gebüschwald plots that contained Red Wood Ant Mounds:
+```{r}
+tree.upper.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Baumarten in der Oberschicht_2009-2017_Rohdaten.xlsx', sheet='SQL Results')
+
+GB.Ant.Tree.El.tb <- filter(tree.upper.tb, CLNR %in% CLNR.GB.RWAM) %>%
+  select(CLNR, BARTOBERTXT) %>%
+    spread(-CLNR, key = BARTOBERTXT) %>%
+      right_join(x = ., y = GB.RWAM.Sp.tb, by = 'CLNR') %>%
+        select(CLNR, Species, Elevation, everything())
+```
+
+The following table has rows for each of the Gebüschwald plots that contained Red Wood Ant mounds and columns for the species of Red Wood Ant found on these mounds, the mean elevation of the plot and the presence or absence of tree species that occurred in the upper forest layer at one or more of these plots.
+
+```{r, rows.print = 13}
+knitr::kable(GB.Ant.Tree.El.tb)
+```
+
+Plotting these 13 Gebüschwald plots that contained Red Wood Ant mounds on the hillshaded terrain surface with the species of Red Wood Ant detected on mounds in these plots represented by the shape of the point used to represent the location of the plot:
+
+```{r, fig.width = 12, fig.height = 9}
+GB.Ants.tb <- left_join(x = GB.RWAM.Sp.tb, y = Coords.tb, by = 'CLNR') %>%
+  select(CLNR, X, Y, Species) %>%
+    mutate(relief = 0)
+
+gb.rwam.sp.terrain.p <- ggplot(data = relief.tb, aes(x = X, y = Y, fill = relief)) +
+  geom_raster(alpha = 0.25) +
+  scale_fill_gradientn(colours = grey(level = seq(from = 0, to = 1, length.out = 1e3))) +
+  coord_equal() +  
+  geom_point(data = GB.Ants.tb, aes(x = X, y = Y, shape = Species)) +
+  scale_shape(solid = FALSE) + 
+  guides(fill = FALSE,
+         size = FALSE,
+         shape = guide_legend(override.aes = list(size = 3))
+  ) +
+  labs(x = 'Easting', y = 'Northing', shape = 'Species', colour = 'Species') +
+  theme_bw() +
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  scale_y_continuous(labels = function(x) format(x, scientific = TRUE))
+
+gb.rwam.sp.terrain.p
+```
+
+The 13 Gebüschwald plots that contained Red Wood Ant mounds form ~4.5% of the 290 plots that contained Red Wood Ant mounds from our full set of data.
+There were also 302 Gebüschwald plots in which Red Wood Ant mounds were not detected.
+Thus gebüschwald is not a particularly rare category within these data while it does seem to be a relevant habitat for Red Wood Ants.
+For these reasons Anita and I have elected to retain the Gebüschwald plots in this analysis in order to train models that describe Red Wood Ant occurrence in both forest and scrub forests in Switzerland.
+This decision contrasts with that of Vandegehuchte et al. who restricted their analysis to the data collected from NFI plots classified as `Wald` (Forest).
+Consequently the results of our analysis will not be directly comparable to those of Vandegehuchte et al. since our analysis is both of observations from an additional habitat type and will not be able to include the NFI variables that are not assessed for Gebüschwald plots which Vandegehuchte et al. used in their analysis.
+However, where possible, I will continue to prepare the explanatory variables Vandegehuchte et al. used in their analysis since considerable thought went into the selection of these variables.
+
+## Preparing Covariates from the Raw Plot Data 
+Vandegehuchte et al. selected the following variables from the raw plot data: WNWENT, WFRMTXT, BESTALT, SCHLUSSGTXT, STRUKTXT, VERJDGTXT, STRADGTXT, BODVERGDGTXT, BEERDGTXT, WARA, DUERSTA, BRAND, WEID, AHAUFEN, STOECKE, GEWAESS and BESTOBER.  We will also need CLNR for joining these data to other data sets. 
+
+First we need to check if these variables are all present in the current export from the database:
+```{r}
+c('CLNR', 'WNWENT', 'WFRMTXT', 'BESTALT', 'SCHLUSSGTXT', 'STRUKTXT', 'VERJDGTXT', 'STRADGTXT', 'BODVERGDGTXT', 'BEERDGTXT', 'WARA', 'DUERSTA', 'BRAND', 'WEID', 'AHAUFEN', 'STOECKE', 'GEWAESS', 'BESTOBER') %in% colnames(RPA.raw.plot.tb) %>%
+  unique() %>%
+    identical(.,TRUE) %>%
+      ifelse(., 'all present', 'one or more absent')
+```
+
+The following sections examine each of these variables in turn except for `CLNR` which is the plot identifier (and thus will be used as the key in all our joins of tibbles of prepared data).
+
+#### WNWENT = MID 816 = Forest / Scrub Forest / Not Forest 
+
+```{r}
+WNWENT.tb <- select(RPA.raw.plot.tb, CLNR, WNWENTTXT)
+
+group_by(WNWENT.tb, WNWENTTXT) %>%
+  count()
+```
+
+#### WFRMTXT = WFRM Text = Waldform = MID 260 = Forest form
+
+See p 142 of NFI Field Manual (2011 English version) for explanations of these categories.
+
+```{r}
+select(RPA.raw.plot.tb, WFRM, WFRMTXT, WNWENTTXT) %>%
+  group_by(WNWENTTXT,WFRM) %>%
+    count()
+```
+
+The 100 missing values in `WFRM` are from `Wald` plots.
+
+```{r}
+WFRM.tb <- select(RPA.raw.plot.tb, CLNR, WFRM) %>%
+  mutate(WFRMTXT = case_when( (WFRM == -1) ~ as.character(NA),
+                              (WFRM ==  1) ~ as.character('high.forest'),
+                              (WFRM ==  2) ~ as.character('coppice'),
+                              (WFRM ==  3) ~ as.character('coppice.with.standards'),
+                              (WFRM ==  4) ~ as.character('selva'),
+                              (WFRM ==  5) ~ as.character('plantation')
+                            )
+        ) %>% 
+    select(-WFRM) %>%
+      rename(WFRM = WFRMTXT)
+
+group_by(WFRM.tb, WFRM) %>%
+  summarise(N = n())
+```
+
+The small number of observations in each of `coppice.with.standards`, `plantation` and `selva` are a concern.
+
+Merging these categories with very few observations into a 'not high forest' category:
+```{r}
+WFRM.tb <- mutate(WFRM.tb,
+                  Forest.Form = case_when(
+                    (WFRM == 'high.forest') ~ 'High.Forest',
+                    !(WFRM == 'high.forest') & !is.na(WFRM) ~ 'Other',
+                    is.na(WFRM) ~ as.character(NA)
+                  )
+           )
+```
+
+check:
+```{r}
+group_by(WFRM.tb, Forest.Form, WFRM) %>%
+  summarise(N = n())
+```
+
+```{r}
+WFRM.tb <- select(WFRM.tb, -WFRM) %>%
+  rename(WFRM = Forest.Form)
+
+group_by(WFRM.tb, WFRM) %>%
+  summarise(N = n())
+```
+
+Christoph tells me that `WFRM` will not have been assessed at plots which were classed as temporarily unstocked forest (i.e. NUTZKAT == 13, 14, 15) because there are very few (if any) large trees at such plots.
+We discussed this and decided that the forest form was different enough at plots classed as temporarily unstocked forest from each of forest form classes assigned to stocked forest plots that these temporarily unstocked forest plots warranted their own `WFRM` category.
+
+```{r}
+NUTZKAT.tb <- select(raw.plot.tb, CLNR, NUTZKAT)
+
+WFRM.tb <- left_join(x = WFRM.tb, y = NUTZKAT.tb, by = 'CLNR')
+
+filter(WFRM.tb, NUTZKAT %in% 13:15) %>%
+  group_by(WFRM) %>%
+    count()
+```
+
+Thus 98 of the 100 plots that are missing values for `WFRM` are plots where the forests was classified as temporarily unstocked.
+Consequently, we can recode the missing `WFRM` values at these plots as a new category `temp.unstock`.
+
+```{r}
+WFRM.tb <- mutate(WFRM.tb,
+                  WFRM.2 = case_when( NUTZKAT   %in% 13:15 ~ 'temp.unstock',
+                                      !(NUTZKAT %in% 13:15) ~ WFRM,
+                           )
+                 )
+
+group_by(WFRM.tb, WFRM.2, WFRM) %>%
+  count()
+```
+
+```{r}
+WFRM.tb <- select(WFRM.tb, CLNR, WFRM.2) %>%
+  rename(WFRM = WFRM.2)
+
+group_by(WFRM.tb, WFRM) %>%
+  count()
+```
+
+#### Combining BESTALT & AGEDOM to describe the age of trees in a plot
+
+`BESTALT` = Bestandesalter = MID 264 = Stand age
+
+`AGEDOM`  = Dominant Age
+
+`AGEDOM` is included in a supplementary data export:
+
+```{r}
+Add.Plot.Data.LFI4.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Missing data_03.10.2018.xlsx', sheet = 'Plotdaten_LFI4')
+```
+
+Christoph has suggest that:
+
+ * when `BESTALT` is present use `BESTALT`
+ * when `BESTALT` is missing and `AGEDOM` is present use `AGEDOM`
+ * when both are missing treat this as an NA
+
+Visualise the structure of the missing observations in `BESTALT` and `AGEDOM`
+```{r, fig.height = 12, fig.width = 12}
+filter(raw.plot.tb, AMHAUSST ==  1) %>%
+  left_join(y = Add.Plot.Data.LFI4.tb, by = 'CLNR') %>%
+    select(CLNR, BESTALT, AGEDOM) %>%
+      vis_miss(cluster = TRUE, sort_miss = TRUE) + theme(axis.text.x = element_text(angle = 90))
+```
+
+Thus it is only a very small proportion of the observations which are missing values for both `BESTALT` and `AGEDOM`.
+
+```{r, fig.width = 12, message = FALSE, warning = FALSE}
+BESTALT.AGEDOM.tb <- filter(raw.plot.tb, AMHAUSST ==  1) %>%
+  left_join(y = Add.Plot.Data.LFI4.tb, by = 'CLNR') %>%
+    select(CLNR, BESTALT, AGEDOM) %>%
+      mutate(BESTALT.AGEDOM = case_when(                 !is.na(BESTALT) ~ BESTALT,
+                                         is.na(BESTALT) & !is.na(AGEDOM) ~ AGEDOM,
+                                         is.na(BESTALT) &  is.na(AGEDOM) ~ as.numeric(NA)
+                              )
+      ) %>%
+        select(CLNR, BESTALT.AGEDOM)
+                                        
+ggplot(data = BESTALT.AGEDOM.tb, aes(x = BESTALT.AGEDOM)) + geom_histogram(fill = 'grey', colour = 'black') + theme_bw()
+```
+
+```{r}
+summary(BESTALT.AGEDOM.tb)
+```
+
+Thus there are the 36 CLNR where both AGEDOM and BESTALT are missing and consequently our derived variable BESTALT.AGEDOM is also missing.
+
+#### SCHLUSSGTXT = Schlussgrad = MID 266 = Crown closure
+
+Crown closure describes the intensity of the interaction of the tree crowns in a stand of trees. 
+
+```{r}
+group_by(RPA.raw.plot.tb, SCHLUSSG) %>%
+  count()
+```
+
+```{r}
+select(RPA.raw.plot.tb, SCHLUSSGTXT) %>%
+  group_by(SCHLUSSGTXT) %>%
+    summarise(Number.of.Plots = n()) %>%
+      arrange(desc(Number.of.Plots))
+```
+
+```{r}
+SCHLUSSG.tb <- select(RPA.raw.plot.tb, CLNR, SCHLUSSG) %>%
+  mutate(SCHLUSSG.TXT = case_when(SCHLUSSG == -1 ~ as.character(NA),
+                                  SCHLUSSG ==  1 ~ 'Crowded',
+                                  SCHLUSSG ==  2 ~ 'Normal',                                       
+                                  SCHLUSSG ==  3 ~ 'Loose',
+                                  SCHLUSSG ==  4 ~ 'Open',                                          
+                                  SCHLUSSG ==  5 ~ 'Scattered',                                       
+                                  SCHLUSSG ==  6 ~ 'Grouped crowded',
+                                  SCHLUSSG ==  7 ~ 'Grouped normal',                         
+                                  SCHLUSSG ==  8 ~ 'Stepped heterogeneous'))
+```
+
+Check:
+```{r}
+group_by(SCHLUSSG.tb, SCHLUSSG) %>%
+  summarise(SCHLUSSG.TXT = unique(SCHLUSSG.TXT), N.Plots = n())
+```
+
+```{r}
+SCHLUSSG.tb <- select(SCHLUSSG.tb, -SCHLUSSG) %>%
+  rename(SCHLUSSG = SCHLUSSG.TXT)
+
+group_by(SCHLUSSG.tb, SCHLUSSG) %>%
+  summarise(N = n())
+```
+
+Recoding with shorter category names:
+```{r}
+SCHLUSSG.tb <- mutate(SCHLUSSG.tb, 
+                      SCHLUSSG.2 = case_when(
+                        SCHLUSSG == 'Crowded' ~ 'Crowded',
+                        SCHLUSSG == 'Grouped crowded' ~ 'Grouped.Crowded', 
+                        SCHLUSSG == 'Grouped normal' ~ 'Grouped.Normal',
+                        SCHLUSSG == 'Loose' ~ 'Loose',
+                        SCHLUSSG == 'Normal' ~ 'Normal',
+                        SCHLUSSG == 'Open' ~ 'Open',
+                        SCHLUSSG == 'Scattered' ~ 'Scattered',
+                        SCHLUSSG == 'Stepped heterogeneous' ~ 'Stepped'
+                      )
+                    )
+```
+
+Check:
+```{r}
+group_by(SCHLUSSG.tb, SCHLUSSG.2, SCHLUSSG) %>%
+  summarise(N = n())
+```
+
+```{r}
+SCHLUSSG.tb <- select(SCHLUSSG.tb, -SCHLUSSG) %>%
+  rename(SCHLUSSG = SCHLUSSG.2)
+
+group_by(SCHLUSSG.tb, SCHLUSSG) %>%
+  count()
+```
+
+Thus SCHLUSSG has 100 missing values.
+
+
+Checking whether these missing values are in plots classified as temporarily unstocked forest (NUTZKAT = 13, 14, 15)
+```{r}
+left_join(x = SCHLUSSG.tb, y = NUTZKAT.tb, by = 'CLNR') %>%
+  filter(NUTZKAT %in% 13:15) %>%
+    group_by(SCHLUSSG) %>%
+      count()
+```
+
+Thus 98 of the 100 SCHLUSSSG values that are missing are from plots classified as temporarily unstocked forest.
+Christoph and I have discussed this and decided that the crown closure in the temporarily unstocked forest will be different enough from any of the crown closure categories from stocked forest that temporarily unstocked forest can form its own crown closure category (recall that there will be very few, if any, large trees in temporarily unstocked forest).
+
+```{r}
+SCHLUSSG.tb <- left_join(x = SCHLUSSG.tb, y = NUTZKAT.tb, by = 'CLNR') %>%
+  mutate(SCHLUSSG.2 = case_when(  NUTZKAT %in% 13:15  ~ 'temp.unstocked',
+                                 !(NUTZKAT %in% 13:15) ~ SCHLUSSG)
+  )
+
+group_by(SCHLUSSG.tb, SCHLUSSG.2, SCHLUSSG) %>%
+  count()
+```
+
+```{r}
+SCHLUSSG.tb <- select(SCHLUSSG.tb, CLNR, SCHLUSSG.2) %>%
+  rename(SCHLUSSG = SCHLUSSG.2)
+```
+
+#### STRUKTXT =	STRUK Text = Bestandesstruktur = MID 267 = Stand structure 
+STRUK describes the vertical structure of the reference stand. 
+
+```{r}
+group_by(RPA.raw.plot.tb, STRUK) %>%
+  count()
+```
+
+```{r}
+STRUK.tb <- select(RPA.raw.plot.tb, CLNR, STRUK, STRUKTXT) %>%
+  mutate(STRUK.TXT = case_when( (STRUK == -1) ~ as.character('NA'),
+                                (STRUK ==  1) ~ 'Single-layered',
+                                (STRUK ==  2) ~ 'Multi-layered',
+                                (STRUK ==  3) ~ 'All-aged/all-sized',
+                                (STRUK ==  4) ~ 'Clustered'
+                              )
+        ) 
+```
+
+check:
+```{r}
+group_by(STRUK.tb, STRUK) %>%
+  summarise(STRUKTXT = unique(STRUKTXT),
+            STRUK.TXT = unique(STRUK.TXT),
+            N.Plots = n())
+
+```
+The small number of plots with STRUKTXT == Rottenstruktur == Clustered is a concern.
+
+```{r}
+STRUK.tb <- select(STRUK.tb, -STRUK, -STRUKTXT) %>%
+  rename(STRUK = STRUK.TXT)
+
+group_by(STRUK.tb, STRUK) %>%
+  summarise(N = n())
+```
+
+Recoding with shorter category names
+```{r}
+STRUK.tb <- mutate(STRUK.tb, 
+                   STRUK.2 = case_when(
+                     STRUK == 'All-aged/all-sized' ~ 'All',
+                     STRUK == 'Clustered' ~ 'Clustered',
+                     STRUK == 'Multi-layered' ~ 'Multiple',
+                     STRUK == 'Single-layered' ~ 'Single'
+                     )
+            ) %>%
+              mutate(STRUK.3 = fct_relevel(STRUK.2, c('Multiple', 'All', 'Clustered', 'Single')))
+```
+
+Check:
+```{r}
+group_by(STRUK.tb, STRUK, STRUK.3) %>%
+  summarise()
+```
+
+```{r}
+STRUK.tb <- select(STRUK.tb, -STRUK, -STRUK.2) %>%
+  mutate(STRUK = as.character(STRUK.3)) %>%
+    select(-STRUK.3)
+
+group_by(STRUK.tb, STRUK) %>%
+  summarise(N = n())
+```
+
+Thus STRUK has 100 missing values.
+
+Checking whether these missing values are from plots in which the forest is classed as temporarily unstocked forest.
+
+```{r}
+STRUK.tb <- left_join(x = STRUK.tb, y = NUTZKAT.tb, by = 'CLNR')
+
+filter(STRUK.tb, NUTZKAT %in% 13:15) %>%
+  group_by(STRUK) %>%
+    count()
+```
+
+Thus 98 of the 100 plots that are missing values for STRUK are classified as temporarily unstocked forest.
+Christoph and I have discussed this and decided that the stand structure in temporarily unstocked forest will be different enough from each of the stand structure classes in stocked forest that we can make a new category for stand structure in temporarily unstocked forest and recode the missing values in STRUK as this category at the appropriate plots.
+
+```{r}
+STRUK.tb <- mutate(STRUK.tb,
+                   STRUK.2 = case_when(  NUTZKAT %in% 13:15  ~ 'temp.unstocked',
+                                       !(NUTZKAT %in% 13:15) ~ STRUK
+                             )
+            )
+
+group_by(STRUK.tb, STRUK, STRUK.2) %>%
+  count()
+```
+
+```{r}
+STRUK.tb <- select(STRUK.tb, CLNR, STRUK.2) %>%
+  rename(STRUK = STRUK.2)
+```
+
+#### "VERJDGTXT" = VERJDG Text = Verjüngungs-Deckungsgrad Text = MID 270 = Degree of cover of regeneration
+
+```{r}
+select(RPA.raw.plot.tb, VERJDGTXT) %>%
+  group_by(VERJDGTXT) %>%
+    summarise(Number.of.Plots = n()) %>%
+      arrange(desc(Number.of.Plots))
+```
+
+VERJDGTXT is interval censored.
+
+Replace the VERJDGTXT value "Wert nicht ermittelt" with NA & substitute for VERJDG:
+```{r}
+VERJDG.tb <- select(RPA.raw.plot.tb, CLNR, VERJDGTXT) %>%
+  mutate(VERJDG = case_when( (VERJDGTXT == 'Wert nicht ermittelt') ~ as.character(NA),
+                            !(VERJDGTXT == 'Wert nicht ermittelt') ~ VERJDGTXT)
+         ) %>%
+  select(-VERJDGTXT)
+
+group_by(VERJDG.tb, VERJDG) %>%
+  summarise(N = n())
+```
+
+#### a function to convert character strings representing interval censored data to numeric values at the mid point of the interval the character string represents
+
+```{r}
+mp.extr <- function(x){
+  str_extract_all(string = x, pattern = '[:digit:]+', simplify = TRUE) %>%
+    as_tibble() %>%
+      mutate_all('as.numeric') %>%
+        rename(Lw = V1, Up = V2) %>%
+          mutate(MP = Lw + (Up-Lw)/2) %>%
+            pull(MP) %>%
+              return()
+}
+```
+
+Demonstration:
+```{r}
+map_dbl(.x = list('25% to 30%', '25%-30%', '25 % : 30 %'),
+        .f = mp.extr)
+```
+
+```{r}
+group_by(VERJDG.tb, VERJDG) %>%
+  summarise()
+```
+
+```{r}
+VERJDG.tb <- mutate(VERJDG.tb,
+                    VERJDG.char = case_when(  VERJDG == '< 1%'  ~ '0% - 1%',
+                                            !(VERJDG == '< 1%') ~ VERJDG
+                                           ),
+                    VERJDG.mp = mp.extr(VERJDG.char)
+                   )
+
+group_by(VERJDG.tb, VERJDG, VERJDG.char, VERJDG.mp) %>%
+  summarise()
+```
+
+```{r}
+VERJDG.tb <- select(VERJDG.tb, CLNR, VERJDG.mp) %>%
+  rename(VERJDG = VERJDG.mp)
+
+pull(VERJDG.tb, VERJDG) %>%
+  summary()
+```
+
+Thus `VERJDG` does not contain any missing values.
+
+#### "STRADGTXT" = STRADG Text = Strauchschicht-Deckungsgrad Text = MID 277 = Degree of cover of shrub layer
+
+```{r}
+select(RPA.raw.plot.tb, STRADGTXT) %>%
+  group_by(STRADGTXT) %>%
+    summarise(Number.of.Plots = n()) %>%
+      arrange(desc(Number.of.Plots))
+```
+
+Thus STRADGTXT is interval censored.
+
+
+```{r}
+STRADG.tb <- select(RPA.raw.plot.tb, CLNR, STRADGTXT) %>%
+  mutate(STRADG = case_when(  (STRADGTXT == 'Wert nicht ermittelt') ~ as.character(NA),
+                             !(STRADGTXT == 'Wert nicht ermittelt') ~ STRADGTXT)
+  ) %>%
+    select(-STRADGTXT)
+
+group_by(STRADG.tb, STRADG) %>%
+  summarise()
+```
+Convert interval censored data to mid points of the intervals
+
+```{r}
+str_detect(string = unique(STRADG.tb$STRADG), pattern = '^<\\s+1%')
+```
+
+```{r}
+STRADG.tb <- mutate(STRADG.tb,
+                    STRADG.char = case_when( str_detect(string = STRADG, pattern = '^<\\s+1%') ~ '0% - 1%',
+                                            !str_detect(string = STRADG, pattern = '^<\\s+1%') ~ STRADG
+                                           ),
+                    STRADG.mp = mp.extr(STRADG.char)
+                   )
+
+group_by(STRADG.tb, STRADG, STRADG.char, STRADG.mp) %>%
+  summarise()
+```
+
+```{r}
+STRADG.tb <- select(STRADG.tb, CLNR, STRADG.mp) %>%
+  rename(STRADG = STRADG.mp)
+
+summary(STRADG.tb)
+```
+
+Thus `STRADG` does not contain any missing values.
+
+#### BODVEGDG = Bodenvegetations-Deckungsgrad = MID 278 = Degree of cover of ground vegetation
+
+A `BODVEGDG` value of `0` means that plot was covered in snow so it was not possible to assess the degree of cover of ground vegetation.
+
+```{r}
+BODVEGDG.LFI4.tb <- filter(raw.plot.tb, AMHAUSST == 1) %>%
+  select(CLNR, BODVEGDG) %>%
+    rename(BODVEGDG.LFI4 = BODVEGDG)
+
+group_by(BODVEGDG.LFI4.tb, BODVEGDG.LFI4) %>%
+  count()
+```
+
+Thus the data from LFI 4 had 68 plots that were covered with snow where it was consequently not possible to assess the degree of cover by ground vegetation.
+
+We should be able to infill many of these missing values with data from LFI 3.
+
+Reading in these data:
+```{r}
+Add.Plot.Data.LFI3.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Missing data_03.10.2018.xlsx', sheet = 'Plotdaten_LFI3')
+```
+
+```{r}
+BODVEGDG.LFI3.tb <- select(.data = Add.Plot.Data.LFI3.tb, CLNR, BODVEGDG) %>%
+  rename(BODVEGDG.LFI3 = BODVEGDG)
+
+group_by(BODVEGDG.LFI3.tb, BODVEGDG.LFI3) %>%
+  count()
+```
+
+```{r}
+BODVEGDG.tb <- left_join(x = BODVEGDG.LFI4.tb, y = BODVEGDG.LFI3.tb, by = 'CLNR') %>%
+  mutate(BODVEGDG = case_when(    
+                      (BODVEGDG.LFI4 > 0) ~ BODVEGDG.LFI4,
+                      (BODVEGDG.LFI4 == 0) & (BODVEGDG.LFI3 > 0) ~ BODVEGDG.LFI3,
+                      (BODVEGDG.LFI4 == 0) & (BODVEGDG.LFI3 == 0) ~ as.numeric(NA)  
+                    )
+  )
+
+group_by(.data = BODVEGDG.tb, BODVEGDG) %>%
+  count()
+```
+
+This infilling has been largely successful, there is now only a single missing value in our combined BODVEGDG data from LFI 4 and and LFI 3.
+
+BODVEGDG is interval censored, I will use the mid points of the intervals to convert this variable to numeric variable.
+
+| BODVEGDG | % Cover by Ground Vegetation |
+|---------:|-----------------------------:|
+|0         | Snow                         |
+|1         | < 1%                         |
+|2         | 1-9%                         |
+|3         | 10-25%                       |
+|4         | 26-50%	                      |
+|5	       | 51-75%	                      |
+|6         | 76-100%	                  |
+
+```{r}
+BODVEGDG.tb <- mutate(BODVEGDG.tb,
+                      BODVEGDG.val = case_when( is.na(BODVEGDG)  ~ as.numeric(NA),
+                                                BODVEGDG == 0	 ~ as.numeric(NA),
+                                                BODVEGDG == 1	 ~ 0.5,
+                                                BODVEGDG == 2	 ~ 5,
+                                                BODVEGDG == 3	 ~ 17.5,
+                                                BODVEGDG == 4	 ~ 38,
+                                                BODVEGDG == 5	 ~ 63,
+                                                BODVEGDG == 6	 ~ 88
+                                     )
+               ) %>%
+                 select(CLNR, BODVEGDG.val) %>%
+                   rename(BODVEGDG = BODVEGDG.val)
+
+summary(BODVEGDG.tb$BODVEGDG)
+```
+
+Thus `BODVEGDG` contains a single missing value.
+
+
+#### "BEERDGTXT" = BEERDG TXT = Beerensträucher-Deckungsgrad = MID 279 = Degree of cover of berry bushes 
+
+A `BEERDG` value of `0` codes for situations where the plot was covered with snow and the degree of cover of berry bushes was consequently not assessed.
+
+Where BEERDG is missing from LFI 4 we can attempt to substitute the value from LFI 3
+
+```{r}
+BEERDG.LFI4.tb <- filter(raw.plot.tb, AMHAUSST == 1) %>%
+  select(CLNR, BEERDG) %>%
+    rename(BEERDG.LFI4 = BEERDG)
+
+group_by(BEERDG.LFI4.tb, BEERDG.LFI4) %>%
+  count()
+```
+
+```{r}
+BEERDG.LFI3.tb <- select(Add.Plot.Data.LFI3.tb, CLNR, BEERDG) %>%
+  rename(BEERDG.LFI3 = BEERDG)
+
+group_by(BEERDG.LFI3.tb, BEERDG.LFI3) %>%
+  count()
+```
+
+```{r}
+BEERDG.tb <- left_join(x = BEERDG.LFI4.tb, y = BEERDG.LFI3.tb, by = 'CLNR') %>%
+  mutate(BEERDG = case_when( (BEERDG.LFI4 > 0) ~ BEERDG.LFI4,
+                             !is.na(BEERDG.LFI3) & (BEERDG.LFI4 == 0) & (BEERDG.LFI3 > 0)  ~ BEERDG.LFI3,
+                             (BEERDG.LFI4 == 0) & (BEERDG.LFI3 == 0) ~ as.numeric(NA)
+                  )
+  ) %>%
+    select(CLNR, BEERDG)
+
+group_by(BEERDG.tb, BEERDG) %>%
+  count()
+
+```
+
+Thus our new composite `BEERDG` only contains a single missing value (i.e. there was only one plot that was covered in snow when it was visited for both LFI 4 and LFI 3)
+
+`BEERDG` is interval censored.
+
+| BEERDG | Cover by berry bushes |
+|-------:|----------------------:|
+| 0	     | Schnee                |
+| 1	     | < 1%                  |
+| 2	     | 1-9%	                 |
+| 3	     | 10-25%                |
+| 4	     | 26-50%                |
+| 5	     | 51-75%                |
+| 6	     | 76-100%               |
+
+Substituting the numeric codes for intervals with the numeric mid points of these intervals.
+
+```{r}
+BEERDG.tb <- select(BEERDG.tb, CLNR, BEERDG) %>%
+  mutate(BEERDG.num = case_when( is.na(BEERDG) ~ as.numeric(NA),
+                                 BEERDG == 0   ~ as.numeric(NA),
+                                 BEERDG == 1   ~ 0.5,
+                                 BEERDG == 2   ~ 5,
+                                 BEERDG == 3   ~ 17.5,
+                                 BEERDG == 4   ~ 38,
+                                 BEERDG == 5   ~ 63,
+                                 BEERDG == 6   ~ 88
+                      )
+  ) %>%
+    select(CLNR, BEERDG.num) %>%
+      rename(BEERDG = BEERDG.num)
+
+group_by(BEERDG.tb, BEERDG) %>%
+  count()
+```
+
+#### "WARATXT" = WARA Text = Waldrand = MID 28 = Forest edge
+
+We can substitute the WARA values from LFI 3 for the missing WARA values from LFI 4.
+
+```{r}
+WARA.LFI4.tb <- filter(raw.plot.tb, AMHAUSST == 1) %>%
+  select(CLNR, WARA) %>%
+    rename(WARA.LFI4 = WARA)
+
+group_by(WARA.LFI4.tb, WARA.LFI4) %>%
+  count()
+```
+
+```{r}
+WARA.LFI3.tb <- select(Add.Plot.Data.LFI3.tb, CLNR, WARA) %>%
+  rename(WARA.LFI3 = WARA)
+
+group_by(WARA.LFI3.tb, WARA.LFI3) %>%
+  count()
+```
+
+```{r}
+WARA.tb <- left_join(x = WARA.LFI4.tb, y = WARA.LFI3.tb, by = 'CLNR') %>%
+  mutate(WARA = case_when(                         WARA.LFI4 > 0 ~ WARA.LFI4,
+                             (WARA.LFI4 == -1) & (WARA.LFI3 > 0) ~ WARA.LFI3,
+                           (WARA.LFI4 == -1) & (WARA.LFI3 == -1) ~ as.numeric(NA),
+                           (WARA.LFI4 == -1) & is.na(WARA.LFI3) ~ as.numeric(NA)
+                )
+  )
+         
+group_by(WARA.tb, WARA) %>%
+  count()
+```
+
+Thus our new composite WARA variable only contains two missing observations.
+
+```{r}
+WARA.tb <- select(WARA.tb, CLNR, WARA) %>%
+  mutate(WARA.TXT = case_when( is.na(WARA)  ~ as.character(NA),
+                               (WARA ==  1) ~ 'Present',
+                               (WARA ==  2) ~ 'Absent'
+                             )
+        ) %>%
+    select(CLNR, WARA.TXT) %>%
+      rename(WARA = WARA.TXT)
+
+group_by(WARA.tb, WARA) %>%
+  summarise(N = n())
+```
+
+#### "DUERSTA" = DUERSTA Duerrstaender = Dürrständer = MID 211 = Snags (Standing Dead Trees)
+A "Dürrständer" is a standing tree that shows no signs of life (i.e. a tree that appears to be dead). 
+For MID 211 an area of 50m by 50m around the plot center was searched for standing dead trees.
+If all "Dürrständer" found with DBH values of 20 cm or greater collectively had a volume of one cubic meter or greater MID 211 was classed as present otherwise MID 211 was classed as absent.
+
+```{r}
+DUERSTA.tb <- select(RPA.raw.plot.tb, CLNR, DUERSTA, DUERSTATXT) %>%
+  mutate(DUERSTA.TXT = case_when( (DUERSTA == -1) ~ as.character(NA),
+                                  (DUERSTA ==  1) ~ 'Present',
+                                  (DUERSTA ==  2) ~ 'Absent'
+                                )
+        )
+```
+
+check:
+```{r}
+group_by(DUERSTA.tb, DUERSTA) %>%
+  summarise(DUERSTATXT = unique(DUERSTATXT),
+            DUERSTA.TXT = unique(DUERSTA.TXT),
+            N.Plots = n()
+            )
+```
+
+```{r}
+DUERSTA.tb <- select(DUERSTA.tb, CLNR, DUERSTA.TXT) %>%
+  rename(DUERSTA = DUERSTA.TXT)
+
+group_by(DUERSTA.tb, DUERSTA) %>%
+  count()
+```
+
+#### "BRAND" = BRAND Text = Brandspuren = MID 203 = Traces of fire
+```{r}
+BRAND.tb <- select(RPA.raw.plot.tb, CLNR, BRAND, BRANDTXT) %>%
+  mutate(BRAND.TXT = case_when((BRAND == -1) ~ as.character(NA),
+                               (BRAND ==  1) ~ 'Present',
+                               (BRAND ==  2) ~ 'Absent'
+                              )
+        )
+```
+
+check:
+```{r}
+group_by(BRAND.tb, BRAND) %>%
+  summarise(BRAND.TXT = unique(BRAND.TXT), BRANDTXT = unique(BRANDTXT), N.Plot = n())
+```
+
+```{r}
+BRAND.tb <- select(BRAND.tb, -BRANDTXT, -BRAND) %>%
+  rename(BRAND = BRAND.TXT)
+
+group_by(BRAND.tb, BRAND) %>%
+  summarise(N = n())
+```
+
+Only 70 presences thus I am excluding this variable from our analysis.
+
+#### "WEIDTXT" = WEID Text = Beweidung = MID 204/MID 205 = Grazing
+Evidence of grazing by various groups of animals.
+
+```{r}
+WEID.tb <- filter(raw.plot.tb, AMHAUSST == 1) %>%
+  select(CLNR) %>%
+    left_join(y = Add.Plot.Data.LFI4.tb, by = 'CLNR') %>%
+      select(CLNR, WEID)
+
+group_by(WEID.tb, WEID) %>%
+  count()
+```
+
+```{r}
+mutate(WEID.tb, WEID.English = case_when(WEID == -1 ~ as.character(NA),
+                                         WEID ==  1 ~ 'No grazing', 
+                                         WEID ==  2 ~ 'Cattle', 
+                                         WEID ==  3 ~ 'Horses', 
+                                         WEID ==  4 ~ 'Goats', 
+                                         WEID ==  5 ~ 'Sheep', 
+                                         WEID ==  6 ~ 'Unknown' # this codes for grazing by an unknown animal
+                                 )
+  ) %>%
+    group_by(WEID, WEID.English) %>%
+      count()
+```
+
+Aside from grazing by cattle all the other grazing categories are quite rare.
+Thus I will follow Vandegehuchte et al.'s decision to merge these levels to: grazing, no grazing & missing
+
+```{r}
+WEID.tb <- select(WEID.tb, CLNR, WEID) %>%
+  mutate(WEID.TXT = case_when( (WEID == -1) ~ as.character(NA),
+                               (WEID == 1)  ~ 'Absent',
+                               (WEID > 1)   ~ 'Present'
+                             )
+        )
+```
+
+```{r}
+WEID.tb <- select(WEID.tb, CLNR, WEID.TXT) %>%
+  rename(WEID = WEID.TXT)
+
+group_by(WEID.tb, WEID) %>%
+  count()
+```
+
+#### "AHAUFEN" = Asthaufen = MID 209 = Heaps of branches
+
+```{r}
+AHAUFEN.tb <- select(RPA.raw.plot.tb, CLNR, AHAUFEN, AHAUFENTXT) %>%
+  mutate(AHAUFEN.TXT = case_when(AHAUFEN == -1 ~ as.character(NA),
+                                 AHAUFEN ==  1 ~ 'Present',
+                                 AHAUFEN ==  2 ~ 'Absent'
+                                )
+  )
+```
+
+check
+```{r}
+group_by(AHAUFEN.tb, AHAUFEN) %>%
+  summarise(AHAUFENTXT = unique(AHAUFENTXT),
+            AHAUFEN.TXT = unique(AHAUFEN.TXT),
+            N.Plots = n()
+            )
+```
+
+```{r}
+AHAUFEN.tb <- select(AHAUFEN.tb, CLNR, AHAUFEN.TXT) %>%
+  rename(AHAUFEN = AHAUFEN.TXT)
+
+group_by(AHAUFEN.tb, AHAUFEN) %>%
+  count()
+```
+
+#### "STOECKE" = Stoecke = Stöcke = MID 210 = Stumps and/or Lying Dead Wood
+
+```{r}
+STOECKE.tb <- select(RPA.raw.plot.tb, CLNR, STOECKE, STOECKETXT) %>%
+  mutate(STOECKE.TXT = case_when(STOECKE == -1 ~ as.character(NA),
+                                 STOECKE ==  1 ~ 'Present',
+                                 STOECKE ==  2 ~ 'Absent'
+                                )
+        )
+```
+
+check:
+```{r}
+group_by(STOECKE.tb, STOECKE) %>%
+  summarise(STOECKETXT = unique(STOECKETXT),
+            STOECKE.TXT = unique(STOECKE.TXT)
+            )
+```
+
+```{r}
+STOECKE.tb <- select(STOECKE.tb, CLNR, STOECKE.TXT) %>%
+  rename(STOECKE = STOECKE.TXT)
+
+group_by(STOECKE.tb, STOECKE) %>%
+  count()
+```
+
+#### "GEWAESS" = Gewässer = MID 401 = Water 
+
+```{r}
+mutate(RPA.raw.plot.tb, 
+       GEWAESS.English = case_when(
+         GEWAESS == -1 ~ 'Missing Data',
+         GEWAESS ==  1 ~ 'No water',
+         GEWAESS ==  2 ~ 'Puddle',
+         GEWAESS ==  3 ~ 'Pond',
+         GEWAESS ==  4 ~ 'Narrow stream',
+         GEWAESS ==  5 ~ 'Broad Stream',
+         GEWAESS ==  6 ~ 'River',
+       )
+      ) %>%
+  group_by(GEWAESS, GEWAESSTXT, GEWAESS.English) %>%
+    summarise(N.Plots = n())
+
+```
+
+The small number of plots with GEWAESS == Puddle or GEWAESS == Pond are a concern.
+Furthermore it does not makes sense to combine either of these categories or still water with any of the categories describing flowing water.
+A single category for still water would only contain 52 observations which is too small a category for my plans of dividing the data for cross validation.
+For these reasons I am following Vandegehuchte et al.'s decisions to compress the GEWAESS categories to three categories for water: Present, Absent and Missing (NA).
+
+```{r}
+GEWAESS.tb <- select(RPA.raw.plot.tb, CLNR, GEWAESS, GEWAESSTXT) %>%
+  mutate(GEWAESS.TXT = case_when( (GEWAESS == -1) ~ as.character(NA),
+                                  (GEWAESS ==  1) ~ 'Absent',
+                                  (GEWAESS > 1 & GEWAESS < 7) ~ 'Present'
+                                )
+        )
+```
+
+check:
+```{r}
+group_by(GEWAESS.tb, GEWAESS) %>%
+  summarise(GEWAESSTXT = unique(GEWAESSTXT),
+            GEWAESS.TXT = unique(GEWAESS.TXT))
+```
+
+```{r}
+GEWAESS.tb <- select(GEWAESS.tb, CLNR, GEWAESS.TXT) %>%
+  rename(GEWAESS = GEWAESS.TXT)
+
+group_by(GEWAESS.tb, GEWAESS) %>%
+  count()
+```  
+  
+#### "BESTOBER" = Bestandes-Oberhöhe im massgebenden Bestand = MID 857 = Upper stand height
+The upper stand height is the average height of the 100 tallest trees and shrubs per hectare.
+
+```{r}
+pull(RPA.raw.plot.tb, BESTOBER) %>%
+  summary()
+```
+
+```{r}
+BESTOBER.tb <- select(RPA.raw.plot.tb, CLNR, BESTOBER)
+```
+
+Thus BESTOBER contains 100 missing values.
+
+
+Checking whether these missing values are for plots that were classified as temporarily unstocked forest.
+```{r}
+BESTOBER.tb <- left_join(x = BESTOBER.tb, y = NUTZKAT.tb, by = 'CLNR')
+
+filter(BESTOBER.tb, NUTZKAT %in% 13:15) %>%
+  group_by(BESTOBER) %>%
+    count()
+```
+
+Thus 98 of the 100 plots that are missing values for BESTOBER are plots in which the forest has been classified as temporarily unstocked forest.
+I have discussed this with Christoph and we have decided to infill the missing BESTOBER values in the temporarily unstocked forest plots with values of zero.
+We consider this to be appropriate because temporarily unstocked forest will have almost no trees or very small trees thus either way the average height of the tallest 100 trees per hectare would be very low (because this average would be calculated from a vector of 100 values that included mainly zeros or very small numbers).
+
+```{r}
+BESTOBER.tb <- mutate(BESTOBER.tb, BESTOBER.2 = case_when(  NUTZKAT %in% 13:15  ~ 0,
+                                                          !(NUTZKAT %in% 13:15) ~ BESTOBER,
+                                                )
+               )
+
+cor(BESTOBER.tb$BESTOBER, BESTOBER.tb$BESTOBER.2, use = 'pairwise.complete')
+```
+
+```{r}
+BESTOBER.tb <- select(BESTOBER.tb, CLNR, BESTOBER.2) %>%
+  rename(BESTOBER = BESTOBER.2)
+```
+
+#### Output of this section
+
+```{r}
+Plot.Raw.Data.tb <- purrr::reduce(.x = list(WNWENT.tb,
+                                            WFRM.tb, 
+                                            BESTALT.AGEDOM.tb, 
+                                            SCHLUSSG.tb, 
+                                            STRUK.tb, 
+                                            VERJDG.tb, 
+                                            STRADG.tb, 
+                                            BODVEGDG.tb, 
+                                            BEERDG.tb, 
+                                            WARA.tb, 
+                                            DUERSTA.tb, 
+                                            WEID.tb, 
+                                            AHAUFEN.tb, 
+                                            STOECKE.tb, 
+                                            GEWAESS.tb, 
+                                            BESTOBER.tb
+                                           ),
+                                  .f = full_join,
+                                  by = 'CLNR')
+```
+
+Check all variables Vandegehuchte et al. selected are present (well all except for BRAND which I have dropped because of very low numbers of presences in these data)
+```{r}
+c('CLNR', 'WFRM', 'BESTALT.AGEDOM', 'SCHLUSSG', 'STRUK', 'VERJDG', 'STRADG', 'BODVERGDG', 'BEERDG', 'WARA', 'DUERSTA' , 'WEID', 'AHAUFEN', 'STOECKE', 'GEWAESS', 'BESTOBER') %in% colnames(Plot.Raw.Data.tb) %>%
+  unique() %>%
+    identical(.,TRUE) %>%
+      ifelse(., 'all variables present', 'one or more variables absent')
+```
+
+## Preparing Covariates describing Tree Types in the Upper Layer of the Forest
+
+Import the data:
+```{r}
+tree.upper.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Baumarten in der Oberschicht_2009-2017_Rohdaten.xlsx', sheet='SQL Results') %>%
+  select(-`...1`)
+```
+
+Check whether all plots (CLNR) that were searched for ant mounds are contained in `tree.upper.tb`:
+```{r}
+summary(RPA.raw.plot.tb$CLNR %in% tree.upper.tb$CLNR)
+```
+
+```{r}
+filter(raw.plot.tb, AMHAUSST == 1) %>%
+  pull(CLNR) %in% tree.upper.tb$CLNR %>%
+    summary()
+```
+
+Thus there are 100 plots (CLNR) that were searched for ants mounds which are absent from `tree.upper.tb`, these CLNR are:
+
+```{r}
+filter(raw.plot.tb, AMHAUSST == 1) %>%
+  select(CLNR) %>%
+    anti_join(x = ., y = tree.upper.tb, by = 'CLNR') %>%
+      pull(CLNR) %>% 
+        sort()
+```
+
+Subset to the rows where we know the Red Wood Ant Mound Presence/Absence:
+```{r}
+WRPA.tree.upper.tb <- select(RPA.raw.plot.tb, CLNR) %>%
+  left_join(., tree.upper.tb, by = 'CLNR')
+
+colnames(WRPA.tree.upper.tb)
+```
+
+`X__1` is row number
+
+`CLNR` = unique plot identifier
+
+`BARTOBER` = Baumart Oberschicht (Code) = Numeric Code for Tree Species in Upper Layer
+
+`BARTOBERTXT` = Baumart Oberschicht Text = Species Name for Tree Species in Upper Layer
+
+`DGANT` = [Prozent] Anteil der Baumart an der Oberschicht = [Percentage] Proportion of tree species in the upper layer
+
+The DGANT values for species in a plot are proportions of the total crown cover present in a plot and consequently should sum to 100% at each CLNR.
+
+I will multiply the DGANT values by overall crown cover estimate to convert these proportions of the present crown cover into overall percentage cover values in the following section.
+
+Spreading DGANT across columns for each tree species to create a tibble with one row for the DGANT values for each CLNR:
+```{r}
+tree.up.sp.cvr.tb <- select(WRPA.tree.upper.tb, -BARTOBER) %>%
+  filter(!is.na(BARTOBERTXT)) %>%
+    spread(key = BARTOBERTXT, value = DGANT, fill = 0)
+
+slice(tree.up.sp.cvr.tb, 1:10)
+```
+
+Examining the species names present in the data:
+```{r}
+stringr::str_subset(string = colnames(tree.up.sp.cvr.tb), pattern = '^(?!CLNR)') %>%
+  sort()
+```
+
+Calculating Proportion Cover by Conifers in Upper Layer:
+```{r}
+upper.layer.tree.species <- select(tree.up.sp.cvr.tb, -CLNR) %>%
+  colnames() %>%
+    sort()
+
+upper.layer.tree.species
+```
+
+Vandegehuchte et al.'s list of conifer species (see also table of species on p53):
+```{r}
+coniferous.species <- c("Abies alba",
+                        "Abies spec.", 
+                        "Larix decidua", # Vandegehuchte et al. had "Larix decidua " possibly a difference in the extracted data but the data used here definitely lack trailing white space after all species names
+                        "Larix kaempferi",
+                        "Metasequoia glyptostroboides",
+                        "Picea abies",
+                        "Pinus cembra",
+                        "Pinus mugo arborea",
+                        "Pinus mugo prostrata",
+                        "Pinus nigra",
+                        "Pinus spec.",
+                        "Pinus strobus",
+                        "Pinus sylvestris",
+                        "Pseudotsuga menziesii",
+                        "Taxus baccata",
+                        "Thuja spec.")
+```
+
+Testing whether all the conifer species listed above present in the data?
+```{r}
+ifelse(FALSE %in% (coniferous.species %in% upper.layer.tree.species), 'No', 'Yes')
+```
+
+Testing that we're not missing any other species of the same Genera as those present in Vandegehuchte et al.'s list:
+```{r}
+conifer.genera <- str_split_fixed(string = coniferous.species, pattern = ' ', n = 2) %>%
+  .[,1] %>%
+    unique() %>%
+      sort()
+
+conifer.genera
+```
+
+Checking which species of the above conifer genera we have in the data:
+```{r}
+str_subset(string = upper.layer.tree.species, pattern = paste(conifer.genera, collapse = '|')) %in% 
+  coniferous.species %>%
+    unique() %>%
+      ifelse(.,'all of the species of the genera in coniferous.species present in the data are present in coniferous.species', 'there are species of the genera in coniferous.species that are not present in the data' )
+```
+
+```{r}
+tree.up.sp.cvr.tb <- mutate(tree.up.sp.cvr.tb, Upper.Layer.Coniferous.Cover = rowSums(select(.data = tree.up.sp.cvr.tb, coniferous.species)))
+```
+
+Check:
+```{r}
+ifelse(unique(rowSums(tree.up.sp.cvr.tb[, coniferous.species]) == pull(tree.up.sp.cvr.tb, Upper.Layer.Coniferous.Cover)), 'passed', 'failed')
+```
+
+Calculating Proportion Cover by Deciduous Trees in the Upper Layer:
+```{r}
+deciduous.species <- c("Acer campestris", 
+                       "Acer opalus", 
+                       "Acer platanoides", 
+                       "Acer pseudoplatanus", 
+                       "Aesculus hippocastanum", 
+                       "Ailanthus altissima", 
+                       "Alnus glutinosa", 
+                       "Alnus incana",
+                       "Alnus viridis", 
+                       "Betula pendula", 
+                       "Betula pubescens", 
+                       "Carpinus betulus", 
+                       "Castanea sativa", 
+                       "Celtis australis", 
+                       "Corylus avellana", 
+                       "Fagus sylvatica", 
+                       "Fraxinus excelsior", 
+                       "Fraxinus ornus", 
+                       "Ilex aquifolium", 
+                       "Juglans regia", 
+                       "Laburnum anagyroides", 
+                       "Liriodendron tulipifera", 
+                       "Malus sylvestris", 
+                       "Ostrya carpinifolia", 
+                       "Platanus sp.", 
+                       "Populus alba", 
+                       "Populus nigra s.l.",
+                       "Populus spec.",
+                       "Populus tremula", 
+                       "Populus x canescens", 
+                       "Prunus avium", 
+                       "Prunus padus", 
+                       "Pyrus communis", 
+                       "Pyrus pyraster",
+                       "Pyrus communis, Pyrus pyraster", # there are entries in the data that match this string
+                       "Quercus cerris",
+                       "Quercus petraea", 
+                       "Quercus pubescens",
+                       "Quercus robur",
+                       "Quercus rubra",
+                       "Robinia pseudoacacia",
+                       "Salix alba",
+                       "Salix caprea",
+                       "Salix spec.",
+                       "Sorbus aria",
+                       "Sorbus aucuparia",
+                       "Sorbus domestica",
+                       "Sorbus latifolia s.l.",
+                       "Sorbus mougeotii", # Vandegehuchte et al. had "Sorbus mougeotii  "
+                       "Sorbus torminalis",
+                       "Tilia cordata",
+                       "Tilia platyphyllos",
+                       "uebrige Laubbaeume",
+                       "Ulmus glabra",
+                       "Ulmus minor")
+```
+
+Are all deciduous species listed above present in the data?
+```{r}
+ifelse(FALSE %in% (deciduous.species %in% upper.layer.tree.species), 'No', 'Yes')
+```
+
+Which are absent?
+```{r}
+deciduous.species[!(deciduous.species %in% upper.layer.tree.species)]
+```
+
+```{r}
+str_subset(string = upper.layer.tree.species, pattern = '^Pyrus')
+```
+
+Are there any species present in both `deciduous.species` and `coniferous.species`?
+```{r}
+ifelse(unique(coniferous.species %in% deciduous.species), 'yes', 'no')
+```
+
+Are there any tree species not on the list of conifers or deciduous trees?
+```{r}
+ifelse(FALSE %in% (upper.layer.tree.species %in% c(coniferous.species, deciduous.species)), 'yes', 'no')
+```
+
+What are they?
+```{r}
+upper.layer.tree.species[!(upper.layer.tree.species %in% c(coniferous.species, deciduous.species))]
+```
+
+*Ulmus laevis* is deciduous so let's add it to the `deciduous.species` list:
+```{r}
+deciduous.species <- sort(c(deciduous.species, 'Ulmus laevis'))
+
+deciduous.species
+```
+
+Checking again whether there are any tree species not on the list of conifers or deciduous trees?
+```{r}
+ifelse(FALSE %in% (upper.layer.tree.species %in% c(coniferous.species, deciduous.species)), 'yes there are', 'no there are not')
+```
+
+```{r}
+deciduous.species.present <- deciduous.species[deciduous.species %in% colnames(tree.up.sp.cvr.tb)]
+
+tree.up.sp.cvr.tb <- mutate(tree.up.sp.cvr.tb, Upper.Layer.Deciduous.Cover = rowSums(select(.data = tree.up.sp.cvr.tb, one_of(deciduous.species.present))))
+```
+
+Upper layer cover should never be > 100%
+```{r}
+mutate(.data = tree.up.sp.cvr.tb, Upper.Layer.Cover = Upper.Layer.Deciduous.Cover + Upper.Layer.Coniferous.Cover) %>%
+  pull(Upper.Layer.Cover) %>%
+    summary()
+```
+
+**Christoph:** '[DGANT] should always sum to 100 % [for each CLNR]. In the 5 [CLNR where it does not] I would multiply all values with the same factor so that the sum gets 100 %.'
+
+This seems reasonable as the relative covers of the different categories were still recorded for these CLNRs (plots).
+
+Examining the non-zero upper layer coverages for these CLNR with total upper layer coverages > 100%
+
+```{r}
+mutate(.data = tree.up.sp.cvr.tb, Upper.Layer.Cover = Upper.Layer.Deciduous.Cover + Upper.Layer.Coniferous.Cover) %>%
+  select(-CLNR) %>%
+    filter(!(Upper.Layer.Cover == 100)) %>%
+      select_if(.predicate = funs(sum(.)>0)) %>%
+        t()
+```
+
+Testing the operations to perform the scaling Christoph suggests:
+```{r}
+mutate(.data = tree.up.sp.cvr.tb, Upper.Layer.Cover = Upper.Layer.Deciduous.Cover + Upper.Layer.Coniferous.Cover) %>%
+  filter(!(Upper.Layer.Cover == 100)) %>%
+    select_if(.predicate = funs(sum(.)>0)) %>%
+      mutate_at(.vars = vars(-CLNR), .funs = funs(. * 100/Upper.Layer.Cover)) %>%
+        t()
+```
+
+```{r}
+mutate(.data = tree.up.sp.cvr.tb, Upper.Layer.Cover = Upper.Layer.Deciduous.Cover + Upper.Layer.Coniferous.Cover) %>%
+  filter(!(Upper.Layer.Cover == 100)) %>%
+    select_if(.predicate = funs(sum(.)>0)) %>%
+      mutate_at(.vars = vars(-CLNR), .funs = funs(.*100/Upper.Layer.Cover)) %>%
+        mutate(sum.sp.covers = rowSums(select(.data = ., -CLNR, -Upper.Layer.Cover, -Upper.Layer.Coniferous.Cover, -Upper.Layer.Deciduous.Cover))) %>%
+          t()
+```
+
+Thus transformation is being performed correctly so let's store the results as `tree.up.sp.cvr.tb.2`
+```{r}
+tree.up.sp.cvr.tb.2 <- mutate(.data = tree.up.sp.cvr.tb, Upper.Layer.Cover = Upper.Layer.Deciduous.Cover + Upper.Layer.Coniferous.Cover) %>%
+  mutate_at(.vars = vars(-CLNR), .funs = funs(.*100/Upper.Layer.Cover)) %>%
+    mutate(sum.sp.covers = rowSums(select(.data = ., -CLNR, -Upper.Layer.Cover, -Upper.Layer.Coniferous.Cover, -Upper.Layer.Deciduous.Cover)))
+```
+
+Check 1:
+```{r}
+unique(pull(tree.up.sp.cvr.tb.2, sum.sp.covers)) %>%
+  tibble(c1 = (length(.) == 1),
+         c2 = (round(.,4) == 100)
+  ) %>%
+    mutate(check = (c1 & c2)) %>%
+      pull(.,check) %>%
+        ifelse(., 'passed', 'failed')
+```
+
+```{r}
+clnr.c <- pull(tree.up.sp.cvr.tb, CLNR)
+
+n <- 10
+
+test.results <- logical(length = n)
+
+test.results
+
+clnr.v <- clnr.c[sample(size = n, x = 1:length(clnr.c))]
+
+for(i in 1:length(clnr.v)){
+  clnr.i <- clnr.v[i]
+tree.up.sp.cvr.tb %>%
+  filter(CLNR == clnr.i) %>%
+    mutate(Upper.Layer.Cover = Upper.Layer.Coniferous.Cover + Upper.Layer.Deciduous.Cover) %>%
+      select(-CLNR, -Upper.Layer.Coniferous.Cover, -Upper.Layer.Deciduous.Cover) %>%
+        mutate_all(.funs = funs(.*100/Upper.Layer.Cover)) %>%
+          mutate(row.sum = rowSums(select(.data = ., -Upper.Layer.Cover))) -> C.15071.test.1
+
+tree.up.sp.cvr.tb.2 %>%
+  filter(CLNR == clnr.i) %>%
+    select(-CLNR, -Upper.Layer.Coniferous.Cover, -Upper.Layer.Deciduous.Cover) %>%
+      mutate(row.sum = sum.sp.covers) %>%
+        select(-sum.sp.covers) -> C.15071.test.2
+
+test.results[i] <- identical(C.15071.test.1, C.15071.test.2)
+
+}
+
+results <- unique(test.results)
+
+ifelse( (length(results) == 1 & TRUE %in% results) ,'all checks passed', 'one or more checks failed')
+
+```
+
+So we can overwrite `tree.up.sp.cvr.tb` with `tree.up.sp.svr.tb.2` and delete `tree.up.sp.svr.tb.2`
+```{r}
+tree.up.sp.cvr.tb <- tree.up.sp.cvr.tb.2
+
+rm('tree.up.sp.cvr.tb.2')
+```
+
+### Create the categories from Abgeleite Daten for different types of trees:
+Vandegehuchte et al. used names like `PRCT_FICHT` etc. here but as these are proportions of the total crown cover rather than percentages of the total covers I'm going to use `PROP_FICHT` etc. as names here.
+
+The 10 main tree species/groups from the NFI Data catalogue:
+```{r, rows.print = 13}
+tribble(
+~Group, ~Taxonomic.Name, ~Common.Name, ~Conifer.Deciduous,
+'Fichte'   , 'Picea sp.'          , 'Spruce'         , 'Conifer',
+'Tanne'    , 'Abies sp.'          , 'Fir'            , 'Conifer',
+'Föhre'    , 'Pinus sylvestris'   , 'Pine'           , 'Conifer',
+'Föhre'    , 'Pinus nigra'        , 'Pine'           , 'Conifer',
+'Föhre'    , 'Pinus strobus'      , 'Pine'           , 'Conifer',
+'Föhre'    , 'Pinus mugo arborea' , 'Pine'           , 'Conifer',
+'Lärche'   , 'Larix sp.'          , 'Larch'          , 'Conifer',
+'Arve'     , 'Pinus cembra'       , 'Stone Pine'     , 'Conifer',
+'Buche'    , 'Fagus silvatica'    , 'European Beech' , 'Deciduous',
+'Ahorn'    , 'Acer sp.'           , 'Maple'          , 'Deciduous',
+'Esche'    , 'Fraxinus sp.'       , 'Ash'            , 'Deciduous',
+'Eiche'    , 'Quercus sp.'        , 'Oak'            , 'Deciduous',
+'Kastanie' , 'Castanea sativa'    , 'Chestnut'       , 'Deciduous')
+```
+
+p216 of NFI Data Catalogue has the two tables reproduced below:
+
+Nadelbäume = Conifers
+```{r, rows.print = 24}
+tribble(
+~Species, ~Type,
+'Abies alba',  'Tanne',
+'Larix decidua et L. kaempferi',  'Lärchen',
+'Larix decidua',  'Europ. Lärche',
+'Larix kaempferi',  'Japanlärche',
+'Picea abies',  'Fichte',
+'Pinus cembra',  'Arve',
+'Pinus mugo arborea',  'Bergföhre',
+'Pinus nigra',  'Schwarzföhre',
+'Pinus strobus',  'Strobe',
+'Pinus sylvestris',  'Waldföhre',
+'Pseudotsuga menziesii',  'Douglasie',
+'Taxus baccata',  'Eibe',
+'Exotische',  'Nadelbäume',
+'Abies sp.',  'Tannen',
+'Cedrus sp.',  'Zedern',
+'Chamaecyparis sp.',  'Scheinzypresse',
+'Cryptomeria sp.',  'Sicheltanne',
+'Metasequoia glyptostroboides',  'Urwelt-Mammutbaum',
+'Picea sp.',  'Fichten',
+'Pinus sp.',  'Föhren',
+'Sequoiadendron giganteum',  'Mammutbaum',
+'Thuja sp.',  'Thuja',
+'Tsuga sp.',  'Hemlock',
+'',  'übrige Nadelbäume')
+```
+
+Laubbäume = Deciduous Trees (a.k.a. broad leaf trees)
+```{r, rows.print = 52}
+tribble(
+~Species, ~Type,
+'Acer campestre', 'Feldahorn',
+'Acer opalus', 'Schneeballblättriger Ahorn',
+'Acer platanoides', 'Spitzahorn',
+'Acer pseudoplatanus', 'Bergahorn',
+'Aesculus hippocastanum', 'Rosskastanie',
+'Ailanthus altissima', 'Götterbaum',
+'Alnus glutinosa', 'Schwarzerle',
+'Alnus incana', 'Grauerle',
+'Betula pendula', 'Hängebirke',
+'Betula pubescens', 'Moor-/Haarbirke',
+'Carpinus betulus', 'Hagebuche',
+'Castanea sativa', 'Kastanie',
+'Celtis australis', 'Zürgelbaum',
+'Cinnamomum camphora', 'Kampferbaum',
+'Fagus sylvatica', 'Buche',
+'Fraxinus excelsior', 'Gemeine Esche',
+'Fraxinus ornus', 'Blumenesche',
+'Juglans regia', 'Nussbaum',
+'Liriodendron tulipifera', 'Tulpenbaum',
+'Malus sylvestris', 's.l. Wildapfel Holzapfel,',
+'Ostrya carpinifolia', 'Hopfenbuche',
+'Platanus sp.', 'Platane',
+'Populus alba', 'Silberpappel',
+'Populus alba et P. canescens', 'Pappeln',
+'Populus nigra', 's. l. Schwarzpappel inkl. Hybriden',
+'Populus sp.', 'übrige Pappeln',
+'Populus tremula', 'Zitterpappel',
+'Populus x canescens', 'Graupappel',
+'Prunus avium', 'Kirschbaum',
+'Pyrus communis & P. pyraster Wildbirne', 'Holzbirne',
+'Quercus cerris', 'Zerreiche',
+'Quercus petraea', 'Traubeneiche',
+'Quercus pubescens', 'Flaumeiche',
+'Quercus robur', 'Stieleiche',
+'Quercus rubra', 'Roteiche',
+'Rhus typhina', 'Essigbaum',
+'Robinia pseudacacia', 'Robinie',
+'Salix alba', 'Weissweide',
+'Salix caprea', 'Salweide',
+'Salix sp.', 'Weiden',
+'Sorbus aria', 'Mehlbeere',
+'Sorbus aucuparia', 'Vogelbeere',
+'Sorbus domestica', 'Speierling',
+'Sorbus latifolia s.l.', 'Breitblättrige Mehlbeere',
+'Sorbus mougeotii', 'Mougeots-Mehlbeere',
+'Sorbus torminalis', 'Elsbeere',
+'Tilia cordata', 'Winterlinde',
+'Tilia platyphyllos', 'Sommerlinde',
+'Ulmus glabra', 'Bergulme',
+'Ulmus laevis', 'Flatterulme',
+'Ulmus minor', 'Feldulme',
+'-', 'übrige Laubbäume'
+)
+```
+
+Creating the cover categories:
+```{r}
+tree.up.sp.cvr.tb <- mutate(.data = tree.up.sp.cvr.tb,
+                     PROP_FICHT = `Picea abies`,
+                     
+                     PROP_TANNE = `Abies alba` + 
+                                  `Abies spec.`,
+                     
+                     PROP_FOEHR = `Pinus sylvestris` + 
+                                  `Pinus nigra` + 
+                                  `Pinus strobus` + 
+                                  `Pinus mugo arborea` + 
+                                  `Pinus spec.`,
+                     
+                     PROP_LARCH = `Larix decidua` + 
+                                  `Larix kaempferi`,
+                     
+                     PROP_ARVEN = `Pinus cembra`,
+                     
+                     PROP_UENDH = `Metasequoia glyptostroboides` + 
+                                  `Pinus mugo prostrata` + 
+                                  `Pseudotsuga menziesii` + 
+                                  `Taxus baccata` + 
+                                  `Thuja spec.`,
+
+                     PROP_BUCHE = `Fagus sylvatica`,
+                     
+                     PROP_AHORN = `Acer campestris` + 
+                                  `Acer platanoides` + 
+                                  `Acer pseudoplatanus` + 
+                                  `Acer opalus`,
+                     
+                     PROP_ESCHE = `Fraxinus excelsior` + 
+                                  `Fraxinus ornus`,
+                     
+                     PROP_EICHE = `Quercus robur` + 
+                                  `Quercus petraea` + 
+                                  `Quercus pubescens` +
+                                  `Quercus cerris` + 
+                                  `Quercus rubra`,
+                     
+                     PROP_CASTA = `Castanea sativa`,
+                     
+                     PROP_UELBH = `Aesculus hippocastanum` + 
+                                  `Ailanthus altissima` + 
+                                  `Alnus glutinosa` + 
+                                  `Alnus incana`+ 
+                                  `Alnus viridis` + 
+                                  `Betula pendula` + 
+                                  `Betula pubescens` + 
+                                  `Carpinus betulus` + 
+                                  `Celtis australis` + 
+                                  `Corylus avellana` + 
+                                  `Ilex aquifolium` + 
+                                  `Juglans regia` + 
+                                  `Laburnum anagyroides` + 
+                                  `Liriodendron tulipifera` + 
+                                  `Malus sylvestris` + 
+                                  `Ostrya carpinifolia` + 
+                                  `Platanus sp.` + 
+                                  `Populus alba` + 
+                                  `Populus nigra s.l.` + 
+                                  `Populus spec.` + 
+                                  `Populus tremula` + 
+                                  `Populus x canescens` + 
+                                  `Prunus avium` + 
+                                  `Prunus padus` + 
+                                  `Pyrus communis, Pyrus pyraster` + 
+                                  `Robinia pseudoacacia` + 
+                                  `Salix alba` + 
+                                  `Salix caprea` + 
+                                  `Salix spec.` + 
+                                  `Sorbus aria` + 
+                                  `Sorbus aucuparia` + 
+                                  `Sorbus domestica` + 
+                                  `Sorbus latifolia s.l.` + 
+                                  `Sorbus mougeotii` + # Vandegehuchte et al. had `Sorbus mougeotii  `
+                                  `Sorbus torminalis` + 
+                                  `Tilia cordata` + 
+                                  `Tilia platyphyllos` + 
+                                  `uebrige Laubbaeume` + 
+                                  `Ulmus glabra` + 
+                                  `Ulmus laevis` + # data to 2017 include this species so I've added it
+                                  `Ulmus minor`)
+```
+
+Testing if all categories sum to 100:
+```{r}
+mutate(.data = tree.up.sp.cvr.tb, 
+       Upper.Layer.Cover = PROP_FICHT +
+                           PROP_TANNE +
+                           PROP_FOEHR +
+                           PROP_LARCH +
+                           PROP_ARVEN +
+                           PROP_UENDH +
+                           PROP_BUCHE +
+                           PROP_AHORN +
+                           PROP_ESCHE +
+                           PROP_EICHE +
+                           PROP_CASTA +
+                           PROP_UELBH)  %>%
+  pull(Upper.Layer.Cover) %>%
+    summary()
+```
+
+### Selecting descriptions of the upper layer to use as covariates
+
+Vandegehuchte et al.'s advice to avoid the situation where some covariates are linear combinations of others:
+
+ * discard 'Prop.Deciduous' (because Prop.Coniferous and Prop.Deciduous always sum to 100)
+ 
+ * discard 'Prop.Uendh' (because Propr.Conif = the sum of different coniferous groups so we have to drop one)
+
+ * discard 'Prop.Uelb' (because Prop.UELB = 100 - the sum of all other proportions)
+ 
+However my plan is to convert these proportions of the overall cover in the upper layer to percentage cover values for the upper layer.
+The total percentage cover varies between plots thus the percentage cover values of all of the groups of trees present will not necessarily sum to 100% at all plots.
+Consequently we do not have the same situation that we have with the DGANT values where Prop.Deciduous + Prop.Conif = 100 at all plots.
+Thus we do not need to discard Prop.Deciduous here.
+We will still have the situation whereby Prct.Conif is the sum of the percentage cover values of all the coniferous groups and the situation whereby Prct.Decid is the sum of the percentage cover values of all of the deciduous groups.
+Thus we should still discard Prop.Uendh and Prop.Uelb to avoid including explanatory variables that are perfect linear combinations of other explanatory variables.
+
+```{r}
+Tree.Upper.Layer.tb <- mutate(tree.up.sp.cvr.tb, Upper.Layer.Cover = Upper.Layer.Coniferous.Cover + Upper.Layer.Deciduous.Cover) %>%
+    filter(Upper.Layer.Cover == 100) %>%
+      mutate(Prop.Deciduous = Upper.Layer.Deciduous.Cover,
+             Prop.Conif = Upper.Layer.Coniferous.Cover,
+             Prop.Ficht = PROP_FICHT,
+             Prop.Tanne = PROP_TANNE,
+             Prop.Foehr = PROP_FOEHR,
+             Prop.Larch = PROP_LARCH,
+             Prop.Arven = PROP_ARVEN,
+             Prop.Uendh = PROP_UENDH,
+             Prop.Buche = PROP_BUCHE,
+             Prop.Ahorn = PROP_AHORN,
+             Prop.Esche = PROP_ESCHE,
+             Prop.Eiche = PROP_EICHE,
+             Prop.Casta = PROP_CASTA,
+             Prop.Uelbh = PROP_UELBH) %>%
+        select(CLNR,
+               Prop.Deciduous,
+               Prop.Conif,
+               Prop.Ficht,
+               Prop.Tanne,
+               Prop.Foehr,
+               Prop.Larch,
+               Prop.Arven,
+               Prop.Buche,
+               Prop.Ahorn,
+               Prop.Esche,
+               Prop.Eiche,
+               Prop.Casta) %>%
+          rename(Prop.Decid = Prop.Deciduous)
+
+slice(Tree.Upper.Layer.tb, 1:10)
+```
+
+Are all plots that were searched for ants present in `Tree.Upper.Layer.tb` ?
+```{r}
+summary(RPA.raw.plot.tb$CLNR %in% Tree.Upper.Layer.tb$CLNR)
+```
+No, there are 100 plots that were searched for ants that are missing from `Tree.Upper.Layer.tb`
+
+Are these the plots the plots that were identified as temporarily unstocked forest?
+
+```{r, fig.width = 12, fig.height = 12}
+left_join(x = NUTZKAT.tb, y = Tree.Upper.Layer.tb, by = 'CLNR') %>%
+  vis_miss(x = ., cluster = TRUE, sort_miss = TRUE) + theme(axis.text.x = element_text(angle = 90))
+```
+
+```{r}
+filter(NUTZKAT.tb, CLNR %in% RPA.raw.plot.tb$CLNR) %>%
+  left_join(x = ., y = Tree.Upper.Layer.tb, by = 'CLNR') %>%
+    filter_at(.vars = vars(matches('^Prop')), .vars_predicate = any_vars(is.na(.))) %>%
+      group_by(NUTZKAT) %>%
+        count()
+```
+
+Thus 98 of the plots that are missing values for the `Prop.*` variables are plots classed as temporarily unstocked forest.
+
+Christoph has suggested that I use the coverage estimates from the assured regeneration data (`HaBaGesVerj_LFI4.tb`) in place of the coverage estimates from the upper layer when these values are missing in temporarily unstocked forest plots.
+
+Reading in these data:
+
+```{r}
+HaBaGesVerj_LFI4.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Missing data_03.10.2018.xlsx', sheet = 'HaBaGesVerj_LFI4')
+```
+
+```{r}
+Ass.Reg.L.tb <- mutate(HaBaGesVerj_LFI4.tb,
+                       HABART.TXT = case_when(
+                         HABART == -1 ~ as.character(NA),
+                         HABART ==  1 ~ 'FICHT', 
+                         HABART ==  2 ~ 'TANNE', 
+                         HABART ==  3 ~ 'FOEHR', 
+                         HABART ==  4 ~ 'LARCH', 
+                         HABART ==  5 ~ 'ARVEN', 
+                         HABART ==  6 ~ 'UENDH', 
+                         HABART ==  7 ~ 'BUCHE', 
+                         HABART ==  8 ~ 'AHORN', 
+                         HABART ==  9 ~ 'ESCHE', 
+                         HABART == 10 ~ 'EICHE', 
+                         HABART == 11 ~ 'CASTA', 
+                         HABART == 12 ~ 'UELBH'
+                       )
+                ) %>%
+                  select(CLNR, HABART.TXT, HABARTDGANT) %>%
+                    spread(key = HABART.TXT, value = HABARTDGANT, fill = 0)
+                        
+slice(Ass.Reg.L.tb, 1:10) %>%
+  knitr::kable()
+```
+
+Check for duplicated rows in `Ass.Reg.L.tb`
+
+```{r}
+group_by(Ass.Reg.L.tb, CLNR) %>%
+  count() %>%
+    summary()
+```
+
+```{r}
+Tree.Upper.Layer.v2.tb <- filter(NUTZKAT.tb, CLNR %in% RPA.raw.plot.tb$CLNR) %>%
+  left_join(x = ., y = Tree.Upper.Layer.tb, by = 'CLNR') %>%
+    left_join(y = Ass.Reg.L.tb, by = 'CLNR') %>%
+      mutate(
+        Prop.Conif.2 = case_when( !(NUTZKAT %in% 13:15) ~ Prop.Conif, 
+                                    NUTZKAT %in% 13:15  ~ ARVEN + FICHT + FOEHR + LARCH + TANNE + UENDH # UENDH = 'other conifer'
+                       ),
+        Prop.Decid.2 = case_when( !(NUTZKAT %in% 13:15) ~ Prop.Decid,
+                                    NUTZKAT %in% 13:15  ~ AHORN + BUCHE + CASTA + EICHE + ESCHE + UELBH # UELBH = 'other deciduous'
+
+                       ),
+        Prop.Ahorn.2 = case_when( !(NUTZKAT %in% 13:15) ~ Prop.Ahorn, # Deciduous'
+                                    NUTZKAT %in% 13:15  ~ AHORN
+                       ),          
+        Prop.Arven.2 = case_when( !(NUTZKAT %in% 13:15) ~ Prop.Arven, # 'Conifer'
+                                    NUTZKAT %in% 13:15  ~ ARVEN
+                       ),          
+        Prop.Buche.2 = case_when( !(NUTZKAT %in% 13:15) ~ Prop.Buche, # 'Deciduous'
+                                    NUTZKAT %in% 13:15  ~ BUCHE
+                       ),          
+        Prop.Casta.2 = case_when( !(NUTZKAT %in% 13:15) ~ Prop.Casta, # 'Deciduous'
+                                    NUTZKAT %in% 13:15  ~ CASTA
+                       ),          
+        Prop.Eiche.2 = case_when( !(NUTZKAT %in% 13:15) ~ Prop.Eiche, # 'Deciduous'
+                                    NUTZKAT %in% 13:15  ~ EICHE
+                       ),          
+        Prop.Esche.2 = case_when( !(NUTZKAT %in% 13:15) ~ Prop.Esche, # 'Deciduous'
+                                    NUTZKAT %in% 13:15  ~ ESCHE
+                       ),          
+        Prop.Ficht.2 = case_when( !(NUTZKAT %in% 13:15) ~ Prop.Ficht, # 'Conifer'
+                                    NUTZKAT %in% 13:15  ~ FICHT
+                       ),          
+        Prop.Foehr.2 = case_when( !(NUTZKAT %in% 13:15) ~ Prop.Foehr, # 'Conifer'
+                                    NUTZKAT %in% 13:15  ~ FOEHR
+                       ),          
+        Prop.Larch.2 = case_when( !(NUTZKAT %in% 13:15) ~ Prop.Larch, # 'Conifer'
+                                    NUTZKAT %in% 13:15  ~ LARCH
+                       ),          
+        Prop.Tanne.2 = case_when( !(NUTZKAT %in% 13:15) ~ Prop.Tanne, # 'Conifer'
+                                    NUTZKAT %in% 13:15  ~ TANNE
+                       )
+      )          
+```
+
+Checks:
+
+```{r}
+with(Tree.Upper.Layer.v2.tb, cor(Prop.Conif, Prop.Conif.2, use = 'pairwise.complete'))
+```
+
+```{r}
+with(Tree.Upper.Layer.v2.tb, cor(Prop.Decid, Prop.Decid.2, use = 'pairwise.complete'))
+```
+
+```{r}
+with(Tree.Upper.Layer.v2.tb, cor(Prop.Ahorn, Prop.Ahorn.2 , use = 'pairwise.complete'))
+```                     
+   
+```{r}   
+with(Tree.Upper.Layer.v2.tb, cor(Prop.Arven, Prop.Arven.2 , use = 'pairwise.complete'))
+```                     
+   
+```{r}   
+with(Tree.Upper.Layer.v2.tb, cor(Prop.Buche, Prop.Buche.2 , use = 'pairwise.complete'))
+```                     
+   
+```{r}
+with(Tree.Upper.Layer.v2.tb, cor(Prop.Casta, Prop.Casta.2 , use = 'pairwise.complete'))
+```
+
+```{r}
+with(Tree.Upper.Layer.v2.tb, cor(Prop.Eiche, Prop.Eiche.2 , use = 'pairwise.complete'))
+```                     
+   
+```{r}   
+with(Tree.Upper.Layer.v2.tb, cor(Prop.Esche, Prop.Esche.2 , use = 'pairwise.complete'))
+```                     
+   
+```{r}   
+with(Tree.Upper.Layer.v2.tb, cor(Prop.Ficht, Prop.Ficht.2 , use = 'pairwise.complete'))
+```
+
+```{r}
+                     
+with(Tree.Upper.Layer.v2.tb, cor(Prop.Foehr, Prop.Foehr.2 , use = 'pairwise.complete'))
+```                     
+   
+```{r}
+with(Tree.Upper.Layer.v2.tb, cor(Prop.Larch, Prop.Larch.2 , use = 'pairwise.complete'))
+```
+
+```{r}
+with(Tree.Upper.Layer.v2.tb, cor(Prop.Tanne, Prop.Tanne.2 , use = 'pairwise.complete'))
+```
+
+```{r, fig.width = 12, fig.height = 12}
+select_if(Tree.Upper.Layer.v2.tb, anyNA) %>%
+  vis_miss(x = ., cluster = TRUE, sort_miss = TRUE) + theme(axis.text.x = element_text(angle = 90))
+```
+
+```{r, fig.width = 12, fig.height = 12}
+select(Tree.Upper.Layer.v2.tb, Prop.Conif.2, Prop.Ahorn.2, Prop.Arven.2, Prop.Buche.2, Prop.Casta.2, Prop.Eiche.2, Prop.Esche.2, Prop.Ficht.2, Prop.Foehr.2, Prop.Larch.2, Prop.Tanne.2) %>%
+  vis_miss(x = ., cluster = TRUE, sort_miss = TRUE) + theme(axis.text.x = element_text(angle = 90))
+```
+
+Check we have a revised Prop.* column for each original Prop.* column
+```{r}
+Original.Prop.Cols <- select(Tree.Upper.Layer.v2.tb, matches('^Prop')) %>% 
+  select(-matches('\\.2$')) %>%
+    colnames() %>%
+      sort()
+
+Revised.Prop.Cols <- select(Tree.Upper.Layer.v2.tb, matches('\\.2$')) %>%
+  colnames() %>%
+    sort()
+
+cbind(Original.Prop.Cols, Revised.Prop.Cols)
+```
+
+```{r}
+Tree.Upper.Layer.v3.tb <- select(Tree.Upper.Layer.v2.tb, matches('^CLNR$|\\.2$')) %>%
+  rename_at(.vars = vars(matches('\\.2$')), .funs = function(x){str_sub(string = x, start = 1, end = (nchar(x)-2))})
+
+colnames(Tree.Upper.Layer.v3.tb)
+```
+
+Examinine the remaining missing observations:
+```{r, fig.width = 12, fig.height = 12}
+vis_miss(x = Tree.Upper.Layer.v3.tb, cluster = TRUE, sort_miss = TRUE) + theme(axis.text.x = element_text(angle = 90))
+```
+
+Are there duplicated rows:
+```{r}
+group_by(Tree.Upper.Layer.v3.tb, CLNR) %>%
+  count() %>%
+    group_by(n) %>%
+      count()
+```
+
+Check that all CLNR that were searched for ant mounds are present in `Tree.Upper.Layer.v3.tb`
+```{r}
+summary(RPA.raw.plot.tb$CLNR %in% Tree.Upper.Layer.v3.tb$CLNR)
+```
+
+## Preparing Covariates Describing the Inventory Layers
+
+```{r}
+layer.cvr.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Bestandesschichten_2009-2017_Rohdaten.xlsx', sheet = 'SQL Results')
+```
+
+`X__1` appears to be row number
+
+`CLNR` =  unique NFI plot identifier
+
+`SCHIBEST` = SCHIBEST	[Code] Bestandesschicht = existing layer (numeric code)
+
+`SCHIBESTTXT` = SCHIBEST [Text] Bestandesschicht = existing layer (categorical variable), identifies which layer the values of DECKGR refer to for each CLNR
+
+`DECKGR` = Schichtdeckungsgrad = Layer coverage and is the overall coverage of the layers specified in SCHIBESTTXT
+
+`SCHLART` = Schlussart = MID 524 = Type of closure of stand layer
+
+`SCHLARTTXT`
+
+"stufig" = stepped
+
+"schichtig" = layered 
+
+Thus to calculate coverage by species in the upper layer I need to multiply the DGANT values by the DECKGR values for the upper layer (i.e. the rows where SCHIBESTTXT = Oberschicht ).
+
+However, we will need to use different variables at the plots classed as temporarily unstocked forest.
+
+For the temporarily unstocked forest Christoph has recommended that I use the coverage of the "gesicherte Verjüngung"- VERJGESDG" multiplied by the proportion - HABARTDGANT of each "Hauptbaumart" - HABART. 
+
+VERJGESDG (and VERJGESDGTXT from Plotdaten_2009-2017_Rohdaten.xlsx) = Deckungsgrad gesicherte Verjungung = Deckungsgrad der gesicherten Verjüngung = MID 273 = Degree of cover of established (assured) regeneration
+
+VERJGESDG and VERJGESDGTXT are contained in "Plotdaten_2009-2017_Rohdaten.xlsx"
+
+The HABARTDGANT of each HABART (Hauptbaumart) is present in "Hauptbaumarten der gesicherten Verjüngung_2009-2017_Rohdaten.xslx".
+
+The species composition in the medium and lower layers has not been recorded by the field team. 
+
+Where there are missing values in the layer coverage values and the plots are not classed as temporarily unstocked forest Christoph recommends infilling with layer coverage of values of 0% and SCHLART values of 1 which codes for schichtig (layered).
+
+### SCHIBESTTXT = SCHIBEST Text = Bestandesschicht = MID 285 = Stand layer
+
+Levels of SCHIBESTTXT 
+
+```{r}
+pull(layer.cvr.tb, SCHIBESTTXT) %>%
+  unique()
+```
+
+"Unterschicht" = "Lower layer" (understory)
+
+"Mittelschicht" = "Middle layer" 
+
+"Oberschicht"  = "Upper layer"
+
+### Stand Layer Cover (Combining DECKGR & VERJGESDG)
+
+DECKGR = Schichtdeckungsgrad = Deckungsgrad der Bestandesschicht = MID 286 = Degree of cover of stand layer
+
+```{r, fig.width = 12, fig.height = 12}
+layer.cover.present.tb <- select(layer.cvr.tb, CLNR, SCHIBESTTXT, DECKGR) %>%
+  spread(key = SCHIBESTTXT, value = DECKGR)
+
+layer.cover.all.tb <- filter(raw.plot.tb, AMHAUSST == 1) %>%
+  select(CLNR) %>%
+    left_join(y = layer.cover.present.tb, by = 'CLNR')
+
+select_if(layer.cover.all.tb, anyNA) %>%
+  vis_miss(cluster = TRUE, sort_miss = TRUE) + theme(axis.text.x = element_text(angle = 90))
+```
+
+Christoph recommends assuming these missing layers to have coverages of zero except in the case of the upper layer in plots classified as temporarily unstocked forest. 
+For these plots in temporarily unstocked forest that are missing DECKGR values for the upper layer (Oberschicht) Christoph has suggested that I take the VERJGESDG values as the coverage values for the upper layer.
+Before I can do this however I need convert the interval censored data in `VERJGESDGTXT` into numeric  values for the mid points of these intervals.
+
+```{r}
+VERJGESDG.tb <- select(raw.plot.tb, CLNR, VERJGESDGTXT)
+
+pull(VERJGESDG.tb, VERJGESDGTXT) %>%
+  unique()
+```
+
+I have defined the function `mp.extr( )` above for converting such text based representations of interval censored data into the the numeric mid points of the intervals thus represented.
+
+```{r}
+VERJGESDG.tb <- mutate(VERJGESDG.tb,
+                        VERJGESDGTXT.2 = case_when(  VERJGESDGTXT == '<   1%' ~ '0% - 1%',
+                                                     VERJGESDGTXT == 'Wert nicht ermittelt' ~ as.character(NA),
+                                                   !(VERJGESDGTXT == '<   1%' | VERJGESDGTXT == 'Wert nicht ermittelt') ~ VERJGESDGTXT
+                                         ),
+                        VERJGESDG.MP   =  mp.extr(VERJGESDGTXT.2)
+                 )
+
+
+group_by(VERJGESDG.tb, VERJGESDG.MP, VERJGESDGTXT.2, VERJGESDGTXT) %>%
+  count()
+```
+
+Are there plots for which both the DECKGR value for the Oberschicht and the VERJGESDGTXT value is missing?
+
+```{r}
+filter(NUTZKAT.tb, CLNR %in% RPA.raw.plot.tb$CLNR) %>%
+  left_join(x = ., y = layer.cover.all.tb, by = 'CLNR') %>%
+    left_join(x = ., y = VERJGESDG.tb, by = 'CLNR') %>%
+      filter(is.na(Oberschicht) & is.na(VERJGESDG.MP)) %>%
+        select(CLNR, NUTZKAT, Oberschicht, VERJGESDG.MP, VERJGESDGTXT) %>%
+          knitr::kable()
+```
+
+There are 15 such plots.
+
+If we look at VERJDGTXT which contains the total cover by regeneration (both assured and not assured) 
+
+```{r}
+select(raw.plot.tb, CLNR, VERJDGTXT) %>%
+  left_join(y = NUTZKAT.tb, by = 'CLNR') %>%
+    filter(.data = ., CLNR %in% RPA.raw.plot.tb$CLNR) %>%
+      left_join(x = ., y = layer.cover.all.tb, by = 'CLNR') %>%
+        left_join(x = ., y = VERJGESDG.tb, by = 'CLNR') %>%
+          filter(is.na(Oberschicht) & is.na(VERJGESDG.MP)) %>%
+            select(CLNR, NUTZKAT, Oberschicht, VERJGESDGTXT, VERJDGTXT) %>%
+              knitr::kable()
+```
+
+we see that all of these 15 plots that are missing values for both the DECKGR in the Obserschicht and the VERJGESDG had overall regeneration coverages (VERJDG values) less than 1%.
+Thus we can safely replace these missing values in VERJGESDGTXT with values of 0%.
+
+```{r}
+layer.cover.all.v2.tb <- select(raw.plot.tb, CLNR, VERJDGTXT) %>%
+  left_join(y = NUTZKAT.tb, by = 'CLNR') %>%
+    filter(.data = ., CLNR %in% RPA.raw.plot.tb$CLNR) %>%
+      left_join(x = ., y = layer.cover.all.tb, by = 'CLNR') %>%
+        left_join(x = ., y = VERJGESDG.tb, by = 'CLNR') %>%
+          mutate( Oberschicht.infill   = case_when( !is.na(Oberschicht) ~ Oberschicht,
+                                                     is.na(Oberschicht) & (NUTZKAT %in% 13:15) & !is.na(VERJGESDG.MP) ~ VERJGESDG.MP,
+                                                     is.na(Oberschicht) & (NUTZKAT %in% 13:15) & is.na(VERJGESDG.MP) & (VERJDGTXT == '< 1%') ~ 0,
+                                                     is.na(Oberschicht) & !(NUTZKAT %in% 13:15) ~ 0,
+           
+                                         ),
+                  Mittelschicht.infill = case_when( is.na(Mittelschicht) ~ 0,
+                                               !is.na(Mittelschicht) ~ Mittelschicht
+                                         ),             
+                  Unterschicht.infill  = case_when( is.na(Unterschicht) ~ 0,
+                                               !is.na(Unterschicht) ~ Unterschicht
+                                         )
+          )
+``` 
+
+Check:
+
+```{r}
+pull(layer.cover.all.v2.tb, Oberschicht.infill) %>% anyNA()
+```
+
+```{r}
+pull(layer.cover.all.v2.tb, Mittelschicht.infill) %>% anyNA()
+```
+
+```{r}
+pull(layer.cover.all.v2.tb, Unterschicht.infill) %>% anyNA()
+```
+
+Check:
+
+```{r}
+with(layer.cover.all.v2.tb, cor(Oberschicht, Oberschicht.infill, use = 'pairwise.complete'))
+```
+
+```{r}
+with(layer.cover.all.v2.tb, cor(Mittelschicht, Mittelschicht.infill, use = 'pairwise.complete'))
+```
+
+```{r}
+with(layer.cover.all.v2.tb, cor(Unterschicht, Unterschicht.infill, use = 'pairwise.complete'))
+```
+
+```{r}
+Layer.Cover.tb <- select(layer.cover.all.v2.tb, CLNR, Mittelschicht.infill, Oberschicht.infill, Unterschicht.infill) %>%
+    rename(Oberschicht = Oberschicht.infill,
+           Mittelschicht = Mittelschicht.infill,
+           Unterschicht = Unterschicht.infill)
+```
+
+```{r, fig.width = 12, fig.height = 12}
+vis_miss(x = Layer.Cover.tb, cluster = TRUE , sort_miss = TRUE) + theme(axis.text.x = element_text(angle = 90))
+```
+
+Check that all plots that were searched for ant mounds are present in `Layer.Cover.tb`
+```{r}
+summary(RPA.raw.plot.tb$CLNR %in% Layer.Cover.tb$CLNR)
+``` 
+
+Check for duplicated rows
+```{r}
+group_by(Layer.Cover.tb, CLNR) %>%
+  count() %>%
+    group_by(n) %>%
+      count()
+```
+
+### Converting the DGANT values to Percentages of Cover Values
+
+Recall that `Tree.Upper.Layer.v3.tb` contains `DGANT` values for the upper layer of the forest.
+These DGANT values are for the groups of trees specified by the column names.
+
+```{r}
+Tree.Upper.Layer.v3.top.10.tb <- slice(Tree.Upper.Layer.v3.tb, 1:10)
+
+Tree.Upper.Layer.v3.top.10.tb
+```
+
+To calculate the percentage cover by these groups of species in the upper layer I need to multiply the DGANT values by the DECKGR values for the upper layer (i.e. the rows where SCHIBESTTXT = Oberschicht ).
+
+However, I will need to use different variables at the plots classed as temporarily unstocked forest because DGANT and DECKGR are not assessed at such plots.
+
+For the temporarily unstocked forest Christoph has recommended that I use the coverage of the "gesicherte Verjüngung"- VERJGESDG" multiplied by the proportion - HABARTDGANT of each "Hauptbaumart" - HABART. 
+
+VERJGESDG (and VERJGESDGTXT from Plotdaten_2009-2017_Rohdaten.xlsx) = Deckungsgrad gesicherte Verjungung = Deckungsgrad der gesicherten Verjüngung = MID 273 = Degree of cover of established (assured) regeneration
+
+VERJGESDG and VERJGESDGTXT are contained in "Plotdaten_2009-2017_Rohdaten.xlsx"
+
+The HABARTDGANT of each HABART (Hauptbaumart) is present in "Hauptbaumarten der gesicherten Verjüngung_2009-2017_Rohdaten.xslx".
+
+`Tree.Upper.Layer.v3.tb` contains the proportions of the crown cover at plots made up by each of the groups specified by the column names.
+`Tree.Upper.Layer.v3.tb` contains DGANT values where these are available and has been infilled with HABARTDGANT values in the temporarily unstocked forest plots (for which DGANT is not recorded) which had assured regeneration.
+The remaining plots missing coverage data for the upper layer have total upper layer coverage values less than 1% and have been recoded as having 0% cover in all upper layer coverage categories.
+This is a small approximation but a necessary one.
+
+`Layer.Cover.tb` contains the percentage coverage of the upper layer.
+In the stocked forest plots this data is available as the variable DECKGR and where it was missing from a stocked forest plot I have followed Christoph's advice and infilled the missing upper layer coverage with a value of zero.
+In the temporarily unstocked forest plots DECKGR was not recorded.
+For these plots I have followed Christoph's advice and infilled the upper layer cover values with the mid point of the interval censored VERJGESDG values.
+In temporarily unstocked forest plots where the degree of cover of assured regeneration (VERJGESDG) values were also missing and the total cover of regeneration (both assured and unassured) was less than 1% the missing upper layer coverage values have been recoded as zeros.
+Again this is a small but necessary approximation.
+
+Thus for each species or group of species below we can calculate the percentage cover in the upper layer by multiplying the proportion this species/group forms of the upper layer cover (the Prop.* variables) by the total percentage cover of the upper layer (Oberschicht) dividing by 100 because both the Prop.* variables and Oberschicht are expressed on a scale of 0 to 100.
+
+
+```{r}
+Prct.Cvr.Uppr.Layer.tb <- left_join(x = Tree.Upper.Layer.v3.tb, y = Layer.Cover.tb, by = 'CLNR') %>%
+  mutate(
+    Prct.Conif = case_when(!is.na(Prop.Conif) & !is.na(Oberschicht) ~ Prop.Conif * Oberschicht/100,
+                            is.na(Prop.Conif) & Oberschicht < 1 ~ 0
+                 ),
+    Prct.Decid = case_when(!is.na(Prop.Decid) & !is.na(Oberschicht) ~ Prop.Decid * Oberschicht/100,
+                            is.na(Prop.Decid) & Oberschicht < 1 ~ 0
+                 ),                           
+    Prct.Ahorn =  case_when(!is.na(Prop.Ahorn) & !is.na(Oberschicht)  ~ Prop.Ahorn * Oberschicht/100,
+                             is.na(Prop.Ahorn) & Oberschicht < 1 ~ 0
+                  ),
+    Prct.Arven =  case_when(!is.na(Prop.Arven) & !is.na(Oberschicht)  ~ Prop.Arven * Oberschicht/100,
+                             is.na(Prop.Arven) & Oberschicht < 1 ~ 0
+                  ),
+    Prct.Buche =  case_when(!is.na(Prop.Buche) & !is.na(Oberschicht)  ~ Prop.Buche * Oberschicht/100,
+                             is.na(Prop.Buche) & Oberschicht < 1 ~ 0
+                  ),
+    Prct.Casta =  case_when(!is.na(Prop.Casta) & !is.na(Oberschicht) ~ Prop.Casta * Oberschicht/100,
+                             is.na(Prop.Casta) & Oberschicht < 1 ~ 0
+                  ),
+    Prct.Eiche =  case_when(!is.na(Prop.Eiche) & !is.na(Oberschicht)  ~ Prop.Eiche * Oberschicht/100,
+                             is.na(Prop.Eiche) & Oberschicht < 1 ~ 0
+                  ),
+    Prct.Esche =  case_when(!is.na(Prop.Esche) & !is.na(Oberschicht)  ~ Prop.Esche * Oberschicht/100, 
+                             is.na(Prop.Esche) & Oberschicht < 1 ~ 0
+                  ),                            
+    Prct.Ficht =  case_when(!is.na(Prop.Ficht) & !is.na(Oberschicht)  ~ Prop.Ficht * Oberschicht/100,
+                             is.na(Prop.Ficht) & Oberschicht < 1 ~ 0
+                  ),
+    Prct.Foehr =  case_when(!is.na(Prop.Foehr) & !is.na(Oberschicht)  ~ Prop.Foehr * Oberschicht/100,
+                             is.na(Prop.Foehr) & Oberschicht < 1 ~ 0
+                  ),
+    Prct.Larch =  case_when(!is.na(Prop.Larch) & !is.na(Oberschicht)  ~ Prop.Larch * Oberschicht/100, 
+                             is.na(Prop.Larch) & Oberschicht < 1 ~ 0
+                  ),                            
+    Prct.Tanne =  case_when(!is.na(Prop.Tanne) & !is.na(Oberschicht)  ~ Prop.Tanne * Oberschicht/100,
+                             is.na(Prop.Tanne) & Oberschicht < 1 ~ 0
+                  )
+  ) %>%
+    select(CLNR, Prct.Conif, Prct.Decid, Prct.Ahorn, Prct.Arven, Prct.Buche, Prct.Casta, Prct.Eiche, Prct.Esche, Prct.Ficht, Prct.Foehr, Prct.Larch, Prct.Tanne)
+```
+
+```{r, fig.width = 12, fig.height = 12}
+vis_miss(x = Prct.Cvr.Uppr.Layer.tb, cluster = TRUE, sort_miss = FALSE) + theme(axis.text.x = element_text(angle = 90))
+```
+
+Check:
+
+```{r, rows.print = 17}
+left_join(x = Prct.Cvr.Uppr.Layer.tb, y = Layer.Cover.tb, by = 'CLNR') %>%
+  mutate(Total.1 = Prct.Conif + Prct.Decid,
+         Check.1 = (Oberschicht == Total.1),
+         Diff = Oberschicht - Total.1
+  ) %>%
+    filter(Check.1 == FALSE) %>%
+      select(Oberschicht, Diff) %>%
+        arrange(Diff)
+```
+
+The first two differences are small enough to be rounding errors the remaining differences of 0.5% will be the plots where the Oberschicht was <1% and estimates of the proportions of this coverage comprised by different species and groups of species was not recorded.
+Thus this is in keeping with what we would expect from the strategy of infilling missing values outlined above and not a concern here.
+
+### SCHLART = Schlussart = MID 524 = Type of closure of stand layer
+
+Vandegehuchte et al. didn't use `SCHLART` but seeing as I will be summarising related groups of explanatory variables with central synthetic variables we may as well include it here.  If `SCHLART` is strongly related to other variables the clustering algorithm will identify this and each group of strongly related variables will be summarised by a single central synthetic variable that describes the majority of the variation in these dimensions.
+
+```{r}
+SCHLART.tb <- select(layer.cvr.tb, CLNR, SCHIBESTTXT, SCHLARTTXT) %>%
+  spread(key = SCHIBESTTXT, value = SCHLARTTXT) %>%
+    rename( SCHLART.Mittelschicht = Mittelschicht,
+            SCHLART.Oberschicht = Oberschicht,
+            SCHLART.Unterschicht = Unterschicht
+    )
+```
+
+```{r}
+summary(RPA.raw.plot.tb$CLNR %in% SCHLART.tb$CLNR)
+```
+
+Thus there are 101 plots that are missing values for `SCHLART` for all three inventory layers.
+
+Are these plots classified as temporarily unstocked forest?
+
+```{r}
+filter(NUTZKAT.tb, CLNR %in% RPA.raw.plot.tb$CLNR) %>%
+  left_join(x = ., y = SCHLART.tb, by = 'CLNR') %>%
+    filter_at(.vars = vars(matches('^SCHLART')), .vars_predicate = any_vars(is.na(.))) %>%
+      group_by(NUTZKAT) %>%
+        count()
+```
+
+Thus 98 of the plots that are missing values for the `SCHLART.*` variables are plots classed as temporarily unstocked forest.
+These plots will have had very few trees present when they were surveyed and thus can safely be classified as having a type of stand closure that is different from each of the existing classes stand closure.
+Recoding the stand closure in each of these layers as 'temp.unstocked' at all plots that are classed as temporarily unstocked forest.
+
+```{r}
+SCHLART.tb <- filter(NUTZKAT.tb, CLNR %in% RPA.raw.plot.tb$CLNR) %>%
+  left_join(x = ., y = SCHLART.tb, by = 'CLNR') %>%
+    mutate(
+      SCHLART.Unterschicht.2  = case_when(  NUTZKAT %in% 13:15  ~ 'temp.unstock',
+                                          !(NUTZKAT %in% 13:15) ~ SCHLART.Unterschicht
+                                ),
+     
+      SCHLART.Mittelschicht.2 = case_when(  NUTZKAT %in% 13:15  ~ 'temp.unstock',
+                                          !(NUTZKAT %in% 13:15) ~ SCHLART.Mittelschicht
+                                ),
+     
+      SCHLART.Oberschicht.2   = case_when(  NUTZKAT %in% 13:15 ~ 'temp.unstock',
+                                          !(NUTZKAT %in% 13:15) ~ SCHLART.Oberschicht 
+                                ),
+      SCHLART.Unterschicht.3  = case_when( SCHLART.Unterschicht.2 == 'schichtig'    ~ 'layered',
+                                           SCHLART.Unterschicht.2 == 'stufig'       ~ 'stepped',
+                                           SCHLART.Unterschicht.2 == 'temp.unstock' ~ 'temp.unstock',
+                                           is.na(SCHLART.Unterschicht.2)            ~ as.character(NA)
+                                ),
+       SCHLART.Mittelschicht.3 = case_when( SCHLART.Mittelschicht.2 == 'schichtig'   ~ 'layered',
+                                           SCHLART.Mittelschicht.2 == 'stufig'       ~ 'stepped',
+                                           SCHLART.Mittelschicht.2 == 'temp.unstock' ~ 'temp.unstock',
+                                           is.na(SCHLART.Mittelschicht.2)            ~ as.character(NA)
+
+                                ),
+       SCHLART.Oberschicht.3   = case_when( SCHLART.Oberschicht.2 == 'schichtig'   ~ 'layered',
+                                           SCHLART.Oberschicht.2 == 'stufig'       ~ 'stepped',
+                                           SCHLART.Oberschicht.2 == 'temp.unstock' ~ 'temp.unstock',
+                                           is.na(SCHLART.Oberschicht.2)            ~ as.character(NA)
+                                )
+    )
+```
+
+```{r}
+group_by(SCHLART.tb, SCHLART.Unterschicht.3, SCHLART.Unterschicht.2, SCHLART.Unterschicht) %>%
+  count()
+```
+
+Thus there are 34 plots which do not have `SCHLART` recorded for the Unterschicht that were not classed as temporarily unstocked forest.
+
+```{r}
+group_by(SCHLART.tb, SCHLART.Mittelschicht.3, SCHLART.Mittelschicht.2, SCHLART.Mittelschicht) %>%
+  count()
+```
+
+Thus there are 25 plots which do not have `SCHLART` recorded for the Mittelschicht that were not classed as temporarily unstocked forest.
+
+```{r}
+group_by(SCHLART.tb, SCHLART.Oberschicht.3, SCHLART.Oberschicht.2, SCHLART.Oberschicht) %>%
+  count()
+```
+
+Thus there are 3 plots which do not have `SCHLART` recorded for the Oberschicht that were not classed as temporarily unstocked forest.
+
+Looking at the CLNR that were missing values for one or more of SCHLART.Oberschicht.3, SCHLART.Mittelschicht.3 and SCHLART.Unterschicht.3:
+
+```{r}
+filter_at(.tbl = SCHLART.tb, .vars = vars(matches('^SCHLART.Oberschicht.3$|^SCHLART.Mittelschicht.3$|^SCHLART.Unterschicht.3$')), .vars_predicate = any_vars(is.na(.))) %>%
+  select(matches('^CLNR$|^SCHLART.Oberschicht.3$|^SCHLART.Mittelschicht.3$|^SCHLART.Unterschicht.3$')) %>%
+    knitr::kable()
+```
+
+I have asked Christoph about these stocked plots with missing values for `SCHLART` and he has suggested that I recode these remaining missing values as schichtig (layered)
+
+
+
+```{r}
+SCHLART.tb <- mutate(.data = SCHLART.tb,
+                     SCHLART.Unterschicht.4  = case_when(!is.na(SCHLART.Unterschicht.3) ~ SCHLART.Unterschicht.3,
+                                                         is.na(SCHLART.Unterschicht.3) ~ 'layered'
+                                                ),
+                     SCHLART.Mittelschicht.4 = case_when(!is.na(SCHLART.Mittelschicht.3) ~ SCHLART.Mittelschicht.3,
+                                                          is.na(SCHLART.Mittelschicht.3) ~ 'layered'
+                                                         
+                                               ),
+                     SCHLART.Oberschicht.4   = case_when(!is.na(SCHLART.Oberschicht.3) ~ SCHLART.Oberschicht.3,
+                                                          is.na(SCHLART.Oberschicht.3) ~ 'layered'
+                                               )
+              )
+```
+
+```{r}
+group_by(SCHLART.tb, SCHLART.Unterschicht.4, SCHLART.Unterschicht.3, SCHLART.Unterschicht.2, SCHLART.Unterschicht) %>%
+  count() %>%
+    knitr::kable()
+```
+
+```{r}
+group_by(SCHLART.tb, SCHLART.Mittelschicht.4, SCHLART.Mittelschicht.3, SCHLART.Mittelschicht.2, SCHLART.Mittelschicht) %>%
+  count() %>%
+    knitr::kable()
+```
+
+```{r}
+group_by(SCHLART.tb, SCHLART.Oberschicht.4, SCHLART.Oberschicht.3, SCHLART.Oberschicht.2, SCHLART.Oberschicht) %>%
+  count()
+```
+
+```{r}
+SCHLART.tb <- select(SCHLART.tb, CLNR, SCHLART.Oberschicht.4, SCHLART.Mittelschicht.4, SCHLART.Unterschicht.4) %>%
+  rename(SCHLART.Oberschicht = SCHLART.Oberschicht.4,
+         SCHLART.Mittelschicht = SCHLART.Mittelschicht.4,
+         SCHLART.Unterschicht = SCHLART.Unterschicht.4
+  )
+```
+
+```{r}
+group_by(SCHLART.tb, SCHLART.Oberschicht) %>%
+  count()
+```
+
+```{r}
+group_by(SCHLART.tb, SCHLART.Mittelschicht) %>%
+  count()
+```
+
+```{r}
+group_by(SCHLART.tb, SCHLART.Unterschicht) %>%
+  count()
+```
+
+## Preparing Covariates Describing the Variables Derived from the Field Data
+
+```{r}
+derived.plot.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Plotdaten und Baumdaten_2009-2017_abgeleitete Daten (Version 31.05.2018).xlsx', sheet = 'Plotdaten')
+```
+
+Subset to the plots where we know the Red Wood Ant Mound Presence/Absence
+```{r}
+WRPA.derived.plot.tb <- select(RPA.raw.plot.tb, CLNR) %>%
+  left_join(., derived.plot.tb, by = 'CLNR')
+```
+
+```{r}
+sort(colnames(WRPA.derived.plot.tb))
+```
+
+Vandegehuchte et al. dropped the following variables (I'm also dropping X__1 which appears to be row number):
+```{r}
+derived.plot.ss.tb <- select(.data = WRPA.derived.plot.tb,
+                             -X,
+                             -Y,
+                             -Z25,
+                             -Z25KLA200,
+                             -Z25KLA400,
+                             -KRFLGR,
+                             -SLOPE25,
+                             -SLOPE25KLA20,
+                             -SLOPE25KLA40,
+                             -ASPECT25,
+                             -EXP4KLA,
+                             -EXP8KLA,
+                             -GWL3KLA,
+                             -ANZBAOBERKLA,
+                             -BWARTENKLA4,
+                             -WRARTEN,
+                             -WRARTENKLA5,
+                             -WRANZART,
+                             -WRANZARTKLA5,
+                             -DDOMKLA50,
+                             -HOESTUFW,
+                             -HOESTUFKLA,
+                             -MANTELBRKLA,
+                             -STRABRKL,
+                             -KRAUTBRKL,
+                             -SDIKLA,
+                             -TYP3,
+                             -TYP30512,
+                             -TYP30517,
+                             -NEODOM,
+                             -NEODOM123,
+                             -NEODOMKLA2,
+                             -NPHKLA100,
+                             -NPHG24KLA100,
+                             -NPHG36KLA100,
+                             -OEKOLFI2KLA,
+                             -WRSTRUKTKLA,
+                             -AUFFORUMF,
+                             -AUFFORUMF6)
+```
+
+which leaves the following variable remaining:
+```{r}
+sort(colnames(derived.plot.ss.tb))
+```
+
+### TYP2 = Wald - Gebüschwald (2 Klassen, Waldentscheid) i.e. contains the same information as WNWENT
+
+```{r}
+TYP2.tb <- derived.plot.ss.tb %>%
+  mutate(TYP2.c = case_when((TYP2 == -1) ~ as.character(NA),
+                            (TYP2 ==  1) ~ 'forest',
+                            (TYP2 ==  2) ~ 'scrubforest')
+  ) %>%
+  select(CLNR, TYP2, TYP2.c)
+
+group_by(TYP2.tb, TYP2) %>%
+  summarise(N = n())
+```
+and as such contains no additional information and can be excluded from our set of covariates.
+
+### VORHERBA = vorherrschende Hauptbaumart nach Basalfläche = predominant main tree species according to basal area
+
+Christoph has recommended that I substitute the highest HABARTDGANT for a CLNR in place of the VORHERBA value in the cases where the VORHERBA value is missing but that HABARTDGANT is present.
+
+We start by identifying which `HABART` value(s) had the maximum `HABARTDGANT` values at each `CLNR`.
+
+check that all plots that were searched for ant mounds are present in `derived.plot.tb`
+```{r}
+summary(RPA.raw.plot.tb$CLNR %in% derived.plot.tb$CLNR)
+```
+
+Check for duplicated `CLNR`
+```{r}
+group_by(derived.plot.tb, CLNR) %>%
+  count() %>%
+    summary()
+```
+
+Check for missing data in `VORHERBA`
+```{r}
+select(derived.plot.tb, VORHERBA) %>%
+  anyNA()
+```
+
+```{r, rows.print = 13}
+VORHERBA.tb <- select(derived.plot.tb, CLNR, VORHERBA)
+
+group_by(VORHERBA.tb, VORHERBA) %>%
+  count() %>%
+    arrange(desc(n))
+```
+
+These `-1` values code for missing data.
+
+```{r}
+HBART.max.tb <- group_by(HaBaGesVerj_LFI4.tb, CLNR) %>%
+  summarise(HABARTDGANT = max(HABARTDGANT)) %>% 
+    left_join(y = HaBaGesVerj_LFI4.tb, by = c('CLNR', 'HABARTDGANT'))
+```
+
+```{r}
+group_by(HBART.max.tb, CLNR) %>%
+  count() %>%
+    summary()
+```
+
+Note multiple `HABART` values at a `CLNR` may tie for the maximum `HABARTDGANT` value e.g.
+
+```{r}
+filter(HBART.max.tb, CLNR ==  25639)
+```
+
+We need to create a new category to code for this situation. The simplest choice here is to create a 'Mixed' category
+
+```{r}
+mixed.or.unique <- function(x){
+  if(length(unique(x)) == 1){
+    return(unique(x))
+  }
+  if(length(unique(x)) > 1){
+    return(999) # my numeric code for a mixed group
+  }
+  if(length(unique(x)) == 0){
+    return(as.numeric(NA))
+  }
+}
+
+Dom.HABART.tb <- group_by(HBART.max.tb, CLNR) %>%
+  summarise(Dom.HABART = mixed.or.unique(HABART)
+  )
+
+group_by(Dom.HABART.tb, CLNR) %>%
+  count() %>%
+    summary()
+```
+
+```{r, rows.print = 14}
+VORHERBA.HABART.tb <- left_join(x = raw.plot.tb, y = derived.plot.tb, by = 'CLNR') %>%
+  filter(AMHAUSST == 1) %>%
+    select(CLNR, VORHERBA) %>%
+      left_join(y = Dom.HABART.tb, by = 'CLNR') %>%
+        mutate(VORHERBA.Dom.HABART = case_when( VORHERBA > 0 ~ VORHERBA,
+                                                (VORHERBA == -1) & !is.na(Dom.HABART) ~ Dom.HABART,
+                                                (VORHERBA == -1) &  is.na(Dom.HABART) ~ 25 # 'no big tree & no assured regeneration'
+                                     )
+        )
+
+group_by(VORHERBA.HABART.tb, VORHERBA.Dom.HABART) %>%
+  count()                                               
+```
+
+```{r, rows.print = 14}
+VORHERBA.HABART.tb <- mutate(VORHERBA.HABART.tb,
+                             VORHERBA.HABART.txt = case_when(
+                               VORHERBA.Dom.HABART == -1 ~ as.character(NA),
+                               VORHERBA.Dom.HABART ==  1 ~ 'FICHT', # 'Fichte'
+                               VORHERBA.Dom.HABART ==  2 ~ 'TANNE', # 'Tanne'
+                               VORHERBA.Dom.HABART ==  3 ~ 'FOEHR', # 'Föhre'
+                               VORHERBA.Dom.HABART ==  4 ~ 'LARCH', # 'Lärche'
+                               VORHERBA.Dom.HABART ==  5 ~ 'ARVEN', # 'Arve'
+                               VORHERBA.Dom.HABART ==  6 ~ 'UENDH', # 'übrige Nadelhölzer'
+                               VORHERBA.Dom.HABART ==  7 ~ 'BUCHE', # 'Buche'
+                               VORHERBA.Dom.HABART ==  8 ~ 'AHORN', # 'Ahorn' 
+                               VORHERBA.Dom.HABART ==  9 ~ 'ESCHE', # 'Esche' 
+                               VORHERBA.Dom.HABART == 10 ~ 'EICHE', # 'Eiche'
+                               VORHERBA.Dom.HABART == 11 ~ 'CASTA', # 'Kastanie
+                               VORHERBA.Dom.HABART == 12 ~ 'UELBH', # 'übrige Laubhölzer'
+                               VORHERBA.Dom.HABART == 25 ~ 'NBTANAR', #'no big trees & no assured regeneration',
+                               VORHERBA.Dom.HABART == 999 ~ 'Mixed' 
+                             )
+                      ) %>%
+  select(CLNR, VORHERBA.HABART.txt) %>%
+    rename(VORHERBA.HABART = VORHERBA.HABART.txt)
+
+group_by(VORHERBA.HABART.tb, VORHERBA.HABART) %>%
+  count() %>%
+    arrange(desc(n))
+```
+
+```{r, rows.print=13}
+tree.groups.tb <- tribble(
+  ~group.code, ~group.name, ~type,
+  'ALL', 'All Groups', 'both',
+  'AHORN', 'Maple'          , 'Deciduous',
+  'ARVEN', 'Stone Pine'     , 'Conifer',
+  'BUCHE', 'European Beech' , 'Deciduous',
+  'CASTA', 'Chestnut'       , 'Deciduous',
+  'EICHE', 'Oak'            , 'Deciduous',
+  'ESCHE', 'Ash'            , 'Deciduous',
+  'FICHT', 'Spruce'         , 'Conifer',
+  'FOEHR', 'Pine'           , 'Conifer',
+  'LARCH', 'Larch'          , 'Conifer',
+  'TANNE', 'Fir'            , 'Conifer',
+  'UELBH', 'other deciduous', 'Deciduous',
+  'UENDH', 'other conifer'  , 'Conifer'
+)
+
+tree.groups.tb
+```
+
+ARVEN and UENDH have too few observations in the VORHERBA.HABART variable and it makes sense to merge these categories (stone pines are conifers)
+
+```{r}
+VORHERBA.HABART.tb <- mutate(VORHERBA.HABART.tb, 
+                        VORHERBA.HABART.2 = case_when(
+                                              VORHERBA.HABART == 'ARVEN'  ~ 'UENDH',
+                                              !(VORHERBA.HABART == 'ARVEN') ~ VORHERBA.HABART
+                                            )
+                      )
+```
+check:
+```{r, rows.print=14}
+group_by(VORHERBA.HABART.tb, VORHERBA.HABART, VORHERBA.HABART.2) %>%
+  count() %>%
+    arrange(desc(n))
+```
+
+```{r, rows.print=13}
+VORHERBA.HABART.tb <- select(VORHERBA.HABART.tb, CLNR, VORHERBA.HABART.2) %>%
+  rename(VORHERBA.HABART = VORHERBA.HABART.2)
+
+group_by(VORHERBA.HABART.tb, VORHERBA.HABART) %>%
+  count() %>%
+    arrange(desc(n))
+```
+
+Our `Mixed` category is too rare so I am going to combine it with our `NBTANAR` to make an `Other` category.
+This is not ideal but is the best of our bad choices here.
+
+```{r, rows.print = 13}
+VORHERBA.HABART.tb <- mutate(VORHERBA.HABART.tb, 
+                        VORHERBA.HABART.2 = case_when(
+                                              VORHERBA.HABART == 'NBTANAR' ~ 'Other',
+                                              VORHERBA.HABART == 'Mixed' ~ 'Other',
+                                              !(VORHERBA.HABART == 'NBTANAR') & !(VORHERBA.HABART == 'Mixed') ~ VORHERBA.HABART
+                                            )
+                      )
+
+group_by(VORHERBA.HABART.tb, VORHERBA.HABART, VORHERBA.HABART.2) %>%
+  count()
+```
+
+```{r, rows.print = 13}
+VORHERBA.HABART.tb <- select(VORHERBA.HABART.tb, CLNR, VORHERBA.HABART.2) %>%
+  rename(VORHERBA.HABART = VORHERBA.HABART.2)
+
+group_by(VORHERBA.HABART.tb, VORHERBA.HABART) %>%
+  count() %>%
+    arrange(desc(n))
+```
+
+Thus VORHERBA.HABART does not contain any missing values however I have been forced to create an `Other` category.
+
+### VORHERNL Vorherrschende Baumartengruppe (Ndh/Lbh) an der Basalfläche = Prevailing tree species group (Ndh/Lbh) at the basal surface
+
+The predominant tree species group (Ndh/Lbh) on the trial area is the group of coniferous or deciduous trees with the largest basal area. 
+Only standing trees are taken into account. 
+With the same maximum basal area of two groups of tree species, the group with the lowest azimuth is predominant.
+`VORHERNL`  has 429 missing values in the original data.
+I will infill these missing `VORHERNL` values from the `HABART` values in a similar manner to how I infilled the `VORHERBA` values with `HABART` values.
+The difference for `VORHERNL` will be that when we have multiple `HABART` values that tie for the maximum `HABARTDGANT` value at a plot we need to identify whether these are predominantly coniferous or deciduous trees or if there is a tie between these two categories as well.
+
+```{r}
+VORHERNL.tb <- left_join(x = raw.plot.tb, y = derived.plot.tb, by = 'CLNR') %>%
+  filter(AMHAUSST == 1) %>%
+    select(CLNR, VORHERBA, VORHERNL)
+
+group_by(VORHERNL.tb, VORHERBA, VORHERNL) %>%
+  count() %>%
+    arrange(desc(n)) %>%
+      knitr::kable()
+```
+
+These `VORHERNL` values of `-1` code for missing data.
+
+| Tree Species Code | Text     | Meaning                                | Conifer/Deciduous |
+|------------------:|---------:|---------------------------------------:|------------------:|
+| -1                | Missing  | Missing Data                           | Unknown           |
+|  1                | FICHT    | Fichte                                 | Conifer           |
+|  2                | TANNE    | Tanne                                  | Conifer           |
+|  3                | FOEHR    | Föhre                                  | Conifer           |
+|  4                | LARCH    | Lärche                                 | Conifer           |
+|  5                | ARVEN    | Arve                                   | Conifer           |
+|  6                | UENDH    | übrige Nadelhölzer                     | Conifer           |
+|  7                | BUCHE    | Buche                                  | Deciduous         |
+|  8                | AHORN    | Ahorn                                  | Deciduous         |
+|  9                | ESCHE    | Esche                                  | Deciduous         |
+| 10                | EICHE    | Eiche                                  | Deciduous         |
+| 11                | CASTA    | Kastanie                               | Deciduous         |
+| 12                | UELBH    | übrige Laubhölzer                      | Deciduous         |
+| 25                | NBTANAR  | no big trees & no assured regeneration | Unknown           |
+| 999               | Mixed    |                                        | Unknown           |
+
+```{r}
+VORHERNL.tb <- mutate(VORHERNL.tb, VORHERNL.2 = case_when(VORHERNL == -1 ~ as.character(NA),
+                                                          VORHERNL ==  1 ~ 'Conifer', 
+                                                          VORHERNL ==  2 ~ 'Deciduous'
+                                                )
+               ) %>%
+                 select(CLNR, VORHERNL.2) %>%
+                   rename(VORHERNL = VORHERNL.2)
+```
+
+```{r}
+HBGV.Step.1.tb <- mutate(HaBaGesVerj_LFI4.tb, 
+                         CorD = case_when( HABART == -1 ~ as.character(NA),
+                                           (0 < HABART) & (HABART <  7) ~ 'Conifer',
+                                           (6 < HABART) & (HABART < 13) ~ 'Deciduous',
+                                           HABART == 25 ~ 'Unknown')
+                  ) %>%
+                    group_by(CLNR, CorD) %>%
+                      summarise(CorD.DGANT = sum(HABARTDGANT, na.rm = TRUE))
+
+ungroup(HBGV.Step.1.tb) %>%
+  slice(1:10)
+```
+
+```{r}
+HBGV.Step.2.tb <- spread(HBGV.Step.1.tb, key = CorD, value = CorD.DGANT)
+
+ungroup(HBGV.Step.2.tb) %>%
+  slice(1:10) %>%
+    knitr::kable()
+```
+
+```{r}
+mutate(HBGV.Step.2.tb, Total = case_when( !is.na(Conifer) & !is.na(Deciduous) ~ Conifer + Deciduous,
+                                          !is.na(Conifer) &  is.na(Deciduous) ~ Conifer,
+                                           is.na(Conifer) & !is.na(Deciduous) ~ Deciduous
+                               )
+) %>%
+  summary()  
+```
+
+```{r}
+HBGV.VORHERNL.equiv.tb <- mutate(HBGV.Step.2.tb, 
+                                 VORHERNL.Equiv = case_when( 
+                                   (!is.na(Conifer) & !is.na(Deciduous)) & (Conifer > Deciduous)  ~ 'Conifer',
+                                   (!is.na(Conifer) & !is.na(Deciduous)) & (Conifer < Deciduous)  ~ 'Deciduous',
+                                   (!is.na(Conifer) & !is.na(Deciduous)) & (Conifer == Deciduous) ~ 'Tie',
+                                                           (!is.na(Conifer) &  is.na(Deciduous))  ~ 'Conifer',
+                                                           ( is.na(Conifer) & !is.na(Deciduous))  ~ 'Deciduous',
+                                                           ( is.na(Conifer) &  is.na(Deciduous))  ~ as.character(NA)
+                                 )
+                          )
+```
+
+Checks:
+```{r}
+filter(HBGV.VORHERNL.equiv.tb, is.na(Conifer) & is.na(Deciduous))
+```
+
+```{r}
+filter(HBGV.VORHERNL.equiv.tb, is.na(Conifer)) %>%
+  pull(VORHERNL.Equiv) %>%
+    unique()
+```
+
+```{r}
+filter(HBGV.VORHERNL.equiv.tb, is.na(Deciduous)) %>%
+  pull(VORHERNL.Equiv) %>%
+    unique()
+```
+
+```{r}
+filter(HBGV.VORHERNL.equiv.tb, (!is.na(Conifer) & !is.na(Deciduous)) & (Conifer > Deciduous) ) %>%
+  pull(VORHERNL.Equiv) %>%
+    unique()
+```
+
+```{r}
+filter(HBGV.VORHERNL.equiv.tb, (!is.na(Conifer) & !is.na(Deciduous)) & (Conifer < Deciduous) ) %>%
+  pull(VORHERNL.Equiv) %>%
+    unique()
+```
+
+```{r}
+filter(HBGV.VORHERNL.equiv.tb, (!is.na(Conifer) & !is.na(Deciduous)) & (Conifer == Deciduous) ) %>%
+  pull(VORHERNL.Equiv) %>%
+    unique()
+```
+
+
+Examine the number of plots in each group:
+
+```{r}
+group_by(HBGV.VORHERNL.equiv.tb, VORHERNL.Equiv) %>%
+  count()
+```
+
+```{r}
+HBGV.VORHERNL.equiv.tb <- select(HBGV.VORHERNL.equiv.tb, CLNR, VORHERNL.Equiv) 
+```
+
+Infilling the missing VORHERNL values with those derived from HABARTDGANT:
+
+```{r}
+VORHERNL.InFill.tb <- left_join(x = VORHERNL.tb, y = HBGV.VORHERNL.equiv.tb, by = 'CLNR') %>%
+  mutate(VORHERNL.InFill = case_when(!is.na(VORHERNL) ~ VORHERNL,
+                                      is.na(VORHERNL) & !is.na(VORHERNL.Equiv) ~ VORHERNL.Equiv,
+                                      is.na(VORHERNL) &  is.na(VORHERNL.Equiv) ~ as.character(NA)
+                           )
+  )
+
+group_by(VORHERNL.InFill.tb, VORHERNL.InFill) %>%
+  count()
+```
+
+We have 131 plots with missing values remaining for VORHERNL after this infilling and six plots where the coniferous trees tied with the deciduous trees in this metric. 
+
+In the absence of a better option I will combine the ties and the unknown values to make a third category here: 'unknown'.
+
+
+```{r}
+VORHERNL.InFill.tb <- select(VORHERNL.InFill.tb, CLNR, VORHERNL.InFill) %>%
+  mutate(VORHERNL.InFill.2 = case_when(VORHERNL.InFill == 'Conifer' ~ 'Conifer',
+                                       VORHERNL.InFill == 'Deciduous' ~ 'Deciduous',
+                                       VORHERNL.InFill == 'Tie' ~ 'Unknown',
+                                       is.na(VORHERNL.InFill) ~ 'Unknown'
+                             )
+  )
+
+group_by(VORHERNL.InFill.tb, VORHERNL.InFill.2, VORHERNL.InFill) %>%
+  count()
+```
+
+```{r}
+VORHERNL.InFill.tb <- select(VORHERNL.InFill.tb, CLNR, VORHERNL.InFill.2) %>%
+  rename(VORHERNL.InFill = VORHERNL.InFill.2)
+
+group_by(VORHERNL.InFill.tb, VORHERNL.InFill) %>%
+  count()
+```
+
+### BIOLFI2V8KLA = klassierter Biotopwert LFI2 (Maximal-Modell, Veg.mod. Küchler, Kienast) = Classified biotope value LFI2 (Maximal model, Veg. mod. Küchler, Kienast)
+
+```{r}
+tribble(~Code, ~German, ~English,
+-1, 'Wert nicht ermittelt', 'Missing',
+ 1, 'Gering', 'Low',
+ 2, 'Mittel', 'Medium', 
+ 3, 'Hoch', 'High',
+)
+```
+
+```{r}
+BIOLFI2V8KLA.tb <- derived.plot.ss.tb %>%
+  mutate(BIOLFI2V8KLA.c = case_when((BIOLFI2V8KLA == -1) ~ as.character(NA),
+                                    (BIOLFI2V8KLA ==  1) ~ 'Low',
+                                    (BIOLFI2V8KLA ==  2) ~ 'Medium',
+                                    (BIOLFI2V8KLA ==  3) ~ 'High' 
+                                   )
+  ) %>% 
+    select(CLNR, BIOLFI2V8KLA, BIOLFI2V8KLA.c)
+```    
+
+check:
+```{r}
+BIOLFI2V8KLA.tb %>%
+  group_by(BIOLFI2V8KLA) %>%
+    summarise(BIOLFI2V8KLA.c = unique(BIOLFI2V8KLA.c))
+```
+
+```{r}
+BIOLFI2V8KLA.tb <- select(BIOLFI2V8KLA.tb, -BIOLFI2V8KLA) %>%
+  rename(BIOLFI2V8KLA = BIOLFI2V8KLA.c)
+
+slice(BIOLFI2V8KLA.tb, 1:10)
+```
+
+```{r}
+group_by(BIOLFI2V8KLA.tb, BIOLFI2V8KLA) %>%
+  count()
+```
+ 
+328 missing values is of great concern. I am excluding this variable.
+
+### BWSTRUKTKLA = Structural diversity
+
+Structural diversity is used to calculate the biotope value. The structural diversity and the weighting of its parameters is primarily oriented towards the habitat requirements of the indicator species capercaillie and black woodpecker.
+
+This variable is not assessed in Gebuschwald plots.
+We have chosen to retain the Gebuschwald plots and consequently must discard this variable.
+
+### WUTEAKT = Vorhandensein von aktuellen Wurzeltellern = Presence of current root plates
+
+Standing (folded) root plates are important evidence of massive natural disturbances (i.e. the kind that knock over trees). They enrich the location with new habitats for numerous animals, especially insects and plants. The presence of root plates (over 0.3 m high) on the interpretation area indicates a current disturbance of the stand. 
+
+```{r}
+tribble(~Code, ~German, ~English,
+        -1, 'Wert nicht ermittelt', 'Missing Data',
+         1, 'Keine aktuellenWurzelteller vorhanden', 'No current root plate available',
+         2, 'Aktuelle Wurzelteller vorhanden', 'Current root plate available',
+)
+```
+ 
+```{r}
+WUTEAKT.tb <- derived.plot.ss.tb %>%
+  mutate(WUTEAKT.c = case_when((WUTEAKT == -1) ~ as.character(NA),
+                               (WUTEAKT ==  1) ~ 'Absent',
+                               (WUTEAKT ==  2) ~ 'Present'
+                     )
+  ) %>%
+    select(CLNR, WUTEAKT, WUTEAKT.c)
+```
+
+check:
+```{r}
+group_by(WUTEAKT.tb, WUTEAKT) %>%
+  summarise(WUTEAKT.c = unique(WUTEAKT.c))
+```    
+
+```{r}
+WUTEAKT.tb <- select(WUTEAKT.tb, -WUTEAKT) %>%
+  rename(WUTEAKT = WUTEAKT.c)
+```
+
+```{r}
+group_by(WUTEAKT.tb, WUTEAKT) %>%
+  count()
+```
+
+### Tree Variables:
+Christoph explained that the variables:
+
+`GESTZ_*`, `STZ_*`, `TOSTZ_*`, `GESV_*`, `V_*`, `TOV_*`, `BAS_*`
+
+are available only in the SQL database (i.e. not on NAFIDAS) can defined as follows:
+
+GESTZ = hochgerechnete Gesamtstammzahl der lebenden und toten Bäume ab BHD 12 pro ha
+
+STZ = hochgerechnete Stammzahl der lebenden Bäume ab BHD 12 pro ha
+
+TOSTZ = hochgerechnete Stammzahl der toten Bäume ab BHD 12 pro ha
+
+GESV = hochgerechnetes Gesamtvolumen der toten und lebenden Bäume ab BHD 12 pro ha
+
+V = hochgerechnetes Volumen der lebenden Bäume ab BHD 12 pro ha
+
+TOV = hochgerechnetes Volumen der toten Bäume ab BHD 12 pro ha
+
+BAS = hochgerechnete Basalfläche der stehend lebenden ab BHD 12 Bäume pro ha
+
+Translations: 1st line = Google Translate, 2nd line = DeepL
+
+GESTZ = extrapolated total number of live and dead trees from BHD 12 per ha
+GESTZ = extrapolated total number of living and dead trees from BHD 12 per ha
+
+STZ = extrapolated stem number of living trees from BHD 12 per ha
+STZ = extrapolated source number of living trees from BHD 12 per ha
+
+TOSTZ = extrapolated stem number of dead trees from BHD 12 per ha
+TOSTZ = extrapolated source number of dead trees from BHD 12 per ha
+
+GESV = extrapolated total volume of dead and living trees from BHD 12 per ha
+GESV = extrapolated total volume of dead and living trees from BHD 12 per ha
+
+V = extrapolated volume of living trees from BHD 12 per ha
+V = extrapolated volume of living trees from BHD 12 per hectare
+
+TOV = extrapolated volume of dead trees from BHD 12 per ha
+TOV = extrapolated volume of dead trees from BHD 12 per hectare
+
+BAS = projected basal area of standing live from BHD 12 trees per ha
+BAS = extrapolated basal area of standing living from BHD 12 trees per ha
+
+thus
+
+GESTZ = STZ + TOSTZ
+
+GESV = V + TOV
+
+Vandegehuchte et al. calculated GESTZ, STZ, TOSTZ, GESV, V, TOV, BAS for conifers
+BUT excluded `GESTZ_*` and `GESV_*` due these variables being linear combinations others
+
+Examine the variables that include `BAS` in their names
+```{r}
+BAS.cn <- str_subset(string = colnames(derived.plot.ss.tb), pattern = 'BAS')
+
+BAS.cn
+```
+
+Extract the group names that are components of the names in `BAS.cn`
+```{r}
+BAS.grps <- str_split_fixed(string = BAS.cn, pattern = '_', n = 2)[,2] %>%
+  sort()
+
+BAS.grps
+```
+
+Create a function to do this same task for each of the other variables:
+```{r}
+get.grps <- function(pat = 'GESTZ'){
+  str_subset(string = colnames(derived.plot.ss.tb), pattern = pat) %>%
+    str_split_fixed(string = ., pattern = '_', n = 2) %>%
+      .[,2] %>%
+        sort()
+}
+```
+
+Check:
+```{r}
+ifelse(identical(BAS.grps, get.grps(pat = 'BAS')), 'passed', 'failed')
+```
+
+Repeat this for GESTZ, TOSTZ, GESV & TOV
+```{r}
+GESTZ.grps <- get.grps(pat = 'GESTZ')
+
+TOSTZ.grps <- get.grps(pat = 'TOSTZ')
+
+GESV.grps <- get.grps(pat = 'GESV')
+
+TOV.grps <- get.grps(pat = 'TOV')
+```
+
+Check whether all contain the same groups in their names:
+```{r}
+grps.ls <- list(GESTZ.grps, TOSTZ.grps, GESV.grps, TOV.grps, BAS.grps)
+
+grps.cmb <- combn(1:length(grps.ls), m = 2)
+
+n.comp = ncol(grps.cmb)
+
+test.out <- logical(length = n.comp)
+
+for(i in 1:ncol(grps.cmb)){
+  test.out[i] <- identical(grps.ls[grps.cmb[1,i]], grps.ls[grps.cmb[2,i]])
+}
+
+ifelse(length(unique(test.out)) == 1 & unique(test.out == TRUE), 'they do', 'they don\'t')
+```
+
+These groups are
+```{r}
+unique.grps <- grps.ls %>%
+  unlist() %>%
+    unique() %>%
+      sort()
+
+unique.grps
+```
+
+Conifers in the main 10 categories:
+Fichte = Picea sp. = Spruce = Conifer
+Tanne = Abies sp. = Fir = Conifer 
+Föhre  = (Pinus sylvestris, P. nigra, P. strobus, P. mugo arborea) = Pine = Conifer
+Lärche (Larix sp.) = Larch = Conifer
+Arve (Pinus cembra) = Stone Pine = Conifer
+übrige Nadelbäume = other conifer
+
+Deciduous in the main 10 categories:
+Ahorn (Acer sp.) = Maple = Deciduous
+Buche (Fagus silvatica) = European Beech = Deciduous
+Esche (Fraxinus sp.) = Ash = Deciduous
+Eiche (Quercus sp.)  = Oak = Deciduous
+Kastanie (Castanea sativa) = Chestnut = Deciduous
+übrige Laubbäume = other deciduous
+
+```{r, rows.print = 13}
+tree.groups.tb <- tribble(
+  ~group.code, ~group.name, ~type,
+  'ALL', 'All Groups', 'both',
+  'AHORN', 'Maple'          , 'Deciduous',
+  'ARVEN', 'Stone Pine'     , 'Conifer',
+  'BUCHE', 'European Beech' , 'Deciduous',
+  'CASTA', 'Chestnut'       , 'Deciduous',
+  'EICHE', 'Oak'            , 'Deciduous',
+  'ESCHE', 'Ash'            , 'Deciduous',
+  'FICHT', 'Spruce'         , 'Conifer',
+  'FOEHR', 'Pine'           , 'Conifer',
+  'LARCH', 'Larch'          , 'Conifer',
+  'TANNE', 'Fir'            , 'Conifer',
+  'UELBH', 'other deciduous', 'Deciduous',
+  'UENDH', 'other conifer'  , 'Conifer'
+)
+
+tree.groups.tb %>%
+  arrange(type, group.code)
+```
+
+Conifers: ARVEN, FICHT, FOEHR, LARCH, TANNE, UENDH
+
+Deciduous: AHORN, BUCHE, CASTA, EICHE, ESCHE, UELBH
+
+Removing variables that are linear combinations of other variables:
+
+remove `UELBH_*` = "other deciduous", as this is all - sum of all other species
+remove `UENDH_*` = "other coniferous" as this is all coniferous - sum of all other coniferous species...
+remove `GESTZ_*` and `GESV_*` variables, as these are sums of STZ and TOSTZ, and V and TOV respectively
+
+```{r}
+plot.trees.tb <- derived.plot.ss.tb %>%
+  mutate(GESTZ_CONIF = GESTZ_ARVEN + GESTZ_FICHT + GESTZ_FOEHR + GESTZ_LARCH + GESTZ_TANNE + GESTZ_UENDH,
+         STZ_CONIF   =   STZ_ARVEN +   STZ_FICHT +   STZ_FOEHR +   STZ_LARCH +   STZ_TANNE +   STZ_UENDH,
+         TOSTZ_CONIF = TOSTZ_ARVEN + TOSTZ_FICHT + TOSTZ_FOEHR + TOSTZ_LARCH + TOSTZ_TANNE + TOSTZ_UENDH,
+         GESV_CONIF  =  GESV_ARVEN +  GESV_FICHT +  GESV_FOEHR +  GESV_LARCH +  GESV_TANNE +  GESV_UENDH,
+         V_CONIF     =     V_ARVEN +     V_FICHT +     V_FOEHR +     V_LARCH +     V_TANNE +     V_UENDH,
+         TOV_CONIF   =   TOV_ARVEN +   TOV_FICHT +   TOV_FOEHR +   TOV_LARCH +   TOV_TANNE +   TOV_UENDH,
+         BAS_CONIF   =   BAS_ARVEN +   BAS_FICHT +   BAS_FOEHR +   BAS_LARCH +   BAS_TANNE +   BAS_UENDH
+  ) %>%
+    select(-matches('GESTZ|GESV|UENDH|UELBH')) %>%
+      select(matches('CLNR|ALL|CONIF|ARVEN|FICHT|FOEHR|LARCH|TANNE|AHORN|BUCHE|CASTA|EICHE|ESCHE')) %>%
+        select(-one_of(c('LISTOTHALL', 'TEMALLKLA4', 'TESALLKLA4', 'TEMALL', 'TESALL')))
+
+plot.trees.tb %>%
+  colnames() %>%
+    sort()
+```
+
+Check all Plots that were searched for ant mounds are present in `plot.trees.tb`
+```{r}
+summary(RPA.raw.plot.tb$CLNR %in% plot.trees.tb$CLNR)
+```
+
+Subset to the Plots that were searched for ant mounds 
+```{r}
+plot.trees.tb <- filter(plot.trees.tb, CLNR %in% RPA.raw.plot.tb$CLNR)
+
+nrow(plot.trees.tb)
+```
+
+Check for duplicate rows
+```{r}
+group_by(plot.trees.tb, CLNR) %>%
+  count() %>%
+    pull(n) %>%
+      max() == 1
+```
+
+Examine `plot.trees.tb` for missing data
+```{r}
+anyNA(plot.trees.tb)
+```
+
+```{r, fig.width = 12, fig.height = 12}
+vis_miss(plot.trees.tb, cluster = TRUE, sort_miss = TRUE) + theme(axis.text.x = element_text(angle = 90))
+```
+
+Thus the plots in `plot.trees.tb` that are missing observations are missing observations for all of the variables in `plot.trees.tb` simultaneously.
+
+The 360 plots that are missing observations for all of the `plot.trees.tb` include both `Wald` and `Gebuschwald` plots.
+
+I infill these missing values in a separate section below.
+
+```{r}
+filter_all(plot.trees.tb, .vars_predicate = any_vars(is.na(.))) %>%
+  left_join(y = RPA.raw.plot.tb, by = 'CLNR') %>%
+    group_by(WNWENTTXT) %>%
+      count()
+```
+	
+The output of this section is:
+```{r}
+Derived.Plot.Data.tb <- purrr::reduce(.x = list(VORHERBA.HABART.tb,
+                                                VORHERNL.InFill.tb,
+                                                WUTEAKT.tb, 
+                                                plot.trees.tb), 
+                                     .f = full_join,
+                                     by = 'CLNR'
+                                    )
+
+```
+
+Check for duplicated rows:
+
+```{r}
+group_by(Derived.Plot.Data.tb, CLNR) %>%
+ count() %>%
+   summary()
+```
+
+Check 1:
+```{r}
+Derived.Plot.Data.tb %>%
+  select(one_of(colnames(WUTEAKT.tb))) %>%
+    identical(. , WUTEAKT.tb) %>%
+      ifelse(., 'passed', 'failed')
+```
+
+Check 2:
+```{r}
+Derived.Plot.Data.tb %>%
+  select(one_of(colnames(plot.trees.tb))) %>%
+    identical(. , plot.trees.tb) %>%
+      ifelse(., 'passed', 'failed')
+```
+
+Derived.Plot.Data.tb contains variables of class 'numeric' and variables of class 'character' and no variables of any other class
+```{r}
+Derived.Plot.Data.tb %>%
+  summarise_all(.funs = 'class') %>%
+    unlist() %>%
+      unique()
+```
+
+Extract column names of the columns that contain categorical data (variables of character class)
+```{r}
+Char.Vars.DPD <- Derived.Plot.Data.tb %>%
+  summarise_all(.funs = 'class') %>%
+    select_if(.predicate = funs('character' %in% .)) %>%
+      colnames() 
+
+Char.Vars.DPD
+```
+
+Extract column names of the columns that contain numeric data (variables of numeric class)
+```{r}
+Num.Vars.DPD <- Derived.Plot.Data.tb %>%
+  summarise_all(.funs = 'class') %>%
+    select_if(.predicate = funs('numeric' %in% .)) %>%
+      colnames() 
+
+Num.Vars.DPD
+```
+
+Plotting the correlation matrix  of the numeric data to examine the correlations among these variables (use the zoom button to enlarge for more legible axis labels)
+```{r, fig.width = 12, fig.height = 12}
+Derived.Plot.Data.tb %>%
+  select(one_of(Num.Vars.DPD), -CLNR) %>%
+    cor(., use = 'pairwise.complete') %>%
+      as.data.frame() %>%
+        mutate(Row.Names = row.names(.)) %>%
+          gather(key = Col.Names, value = 'Cor', -Row.Names) %>%
+            ggplot(aes(x = Row.Names, y = Col.Names, fill = Cor)) +
+              geom_raster() +
+                scale_fill_distiller(type = 'div', palette = 'PRGn', limits = c(-1,1)) + 
+                  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 6),
+                        axis.text.y = element_text(size = 6)
+                        ) + 
+                    coord_equal() +
+                      labs(x = NULL, y = NULL)
+```
+
+An interactive plot of the correlation matrix with highly correlated groups of covariates grouped together along the axes. Mouse over a pixel to see the pair of covariates it represents.  Click and drag a box around a region in the plot to zoom into that region (Double click to zoom out to the original zoom level).
+```{r message=FALSE, warning=FALSE}
+library(heatmaply)
+```
+
+```{r, fig.width = 10, fig.height = 8}
+Derived.Plot.Data.tb %>%
+  select(one_of(Num.Vars.DPD), -CLNR) %>%
+    cor(., use = 'pairwise.complete') %>%
+      heatmaply(colors = PRGn, limits = c(-1,1), margins = c(120,120), column_text_angle = 90, fontsize_row = 6, fontsize_col = 6)
+```
+
+Examine the pairs of covariates that have correlation coefficient magnitudes greater than 0.95
+```{r, rows.print = 11}
+Derived.Plot.Data.tb %>%
+  select(one_of(Num.Vars.DPD), -CLNR) %>%
+    cor(., use = 'pairwise.complete') %>%
+      as.data.frame() %>%
+        mutate(Row.Names = row.names(.)) %>%
+          gather(key = Col.Names, value = 'Cor', -Row.Names) %>%
+            mutate(Abs.Cor = abs(Cor)) %>%
+              filter(!(Row.Names == Col.Names) & Abs.Cor > 0.95) %>%
+                rowwise() %>%
+                  mutate(RN.N = paste(sort(c(Row.Names, Col.Names)), collapse = '.')) %>%
+                    ungroup() %>%
+                      select(Row.Names, Col.Names, RN.N, everything()) %>%
+                        group_by(RN.N) %>%
+                          mutate(Rep = c(1,2)) %>%
+                            ungroup() %>%
+                              arrange(RN.N) %>%
+                                filter(Rep == 1) -> DPD.hf.AC95.tb
+
+DPD.hf.AC95.tb
+```
+
+The clustering of explanatory variables and summarisation of each cluster with a central synthetic variable that I will conduct in future stages of this data preparation will address the concerns arising from highly correlated groups of explanatory variables existing among these data.
+
+## Preparing Derived Covariates that Describe the Trees in the Plot
+```{r}
+diam.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Plotdaten und Baumdaten_2009-2017_abgeleitete Daten (Version 31.05.2018).xlsx', sheet = 'Baumdaten')
+```
+
+Subset to the plots where we know the Red Wood Ant Mound Presence/Absence
+```{r}
+diam.tb <- select(RPA.raw.plot.tb, CLNR) %>%
+  left_join(., diam.tb, by = 'CLNR')
+```
+
+```{r}
+colnames(diam.tb)
+```
+In place of Vandegehuchte et al.'s calculation of the mean diameter at breast height in a plot (GESD13_ALL in their code) I will use the NFI variable `DDOM` which represents that dominant diameter at breast height of standing, living trees in the plots.
+
+Description internal: Dominant chest height diameter in cm. Average diameter of the 100 strongest trees per ha. Calculated for all stocked trial areas. All population trees with a D13 value >= 12 cm and living standing are taken into account for the DDOM calculation on the sample area. Each individual tree is weighted with the factor 20 (D13 >= 36 cm) or 50 (D13 < 36 cm), so that the number of trees required for the calculation is between 2 and 5.
+The weighting is not increased for test areas with reduction lines (e.g. forest edge).
+If there are fewer trees than necessary for the calculation, the existing trees are used to obtain a value for the DDOM due to a lack of data.
+
+```{r}
+filter(raw.plot.tb, AMHAUSST == 1) %>%
+  select(CLNR) %>%
+    left_join(y = Add.Plot.Data.LFI4.tb, by = 'CLNR') %>%
+      pull(DDOM) %>%
+        summary()
+```
+
+`DDOM` is missing from 429 plots that were searched for ant mounds.
+I have discussed these missing values with Christoph and `DDOM` will be missing for plots which lacked sample trees i.e. live, standing trees with a D13 (diameter at breast height) of 12 cm or greater.
+Thus for our purposes we can replace these missing `DDOM` values with values of zero since random forests are based on decision trees which use binary partitions of the data defined by threshold values in explanatory variables.
+Consequently, replacing values that are missing but known to be very small with zeros is far less of an issue in data preparation for random forests than it would be in data preparation for multiple linear regressions.
+
+```{r}
+DDOM.tb <- filter(raw.plot.tb, AMHAUSST == 1) %>%
+  select(CLNR) %>%
+    left_join(y = Add.Plot.Data.LFI4.tb, by = 'CLNR') %>%
+      select(CLNR, DDOM) %>%
+        mutate(DDOM.infill = case_when( is.na(DDOM) ~ 0,
+                                       !is.na(DDOM)  ~ DDOM
+                             )
+        ) %>%
+          select(CLNR, DDOM.infill) %>%
+            rename(DDOM = DDOM.infill)
+```
+
+## Preparing Covariates additional to Vandegehuchte et al.'s selection:
+These covariates describe disturbances of the plots that may be of relevance to Red Wood Ants.
+
+#### Traces of slow snowpack movements = MID 202 = langsame Schneebewegung = SCHNLANG
+```{r}
+SCHNLANG.tb <- select(RPA.raw.plot.tb, CLNR, SCHNLANG, SCHNLANGTXT)
+
+group_by(SCHNLANG.tb, SCHNLANG, SCHNLANGTXT) %>%
+  summarise(N.Plots = n())
+```
+
+```{r}
+SCHNLANG.tb <- select(SCHNLANG.tb, -SCHNLANG) %>%
+    mutate(SCHNLANG = case_when(
+      (SCHNLANGTXT == 'Wert nicht ermittelt') ~ as.character(NA),
+      (SCHNLANGTXT == 'vorhanden') ~ 'Present',
+      (SCHNLANGTXT == 'nicht vorhanden') ~ 'Absent'
+                      )
+    )
+```
+
+check
+```{r}
+group_by(SCHNLANG.tb, SCHNLANG, SCHNLANGTXT) %>%
+  summarise(N.Plots = n())
+```
+      
+```{r}
+SCHNLANG.tb <- select(SCHNLANG.tb, CLNR, SCHNLANG)
+```
+
+#### Avalanches = MID 400 = Lawinen = Lawinenspuren = LAWI
+Traces of Avalanches
+
+```{r}
+LAWI.tb <- select(RPA.raw.plot.tb, CLNR, LAWI, LAWITXT)
+
+group_by(LAWI.tb, LAWI, LAWITXT) %>%
+  summarise(N.Plots = n())
+```
+
+```{r}
+LAWI.tb <- select(LAWI.tb, -LAWI) %>%
+  mutate(LAWI = case_when(
+    (LAWITXT == 'Wert nicht ermittelt') ~ as.character(NA),
+    (LAWITXT == 'vorhanden') ~ 'Present',
+    (LAWITXT == 'nicht vorhanden') ~ 'Absent'
+                         )
+  )
+```
+check:
+```{r}
+group_by(LAWI.tb, LAWI, LAWITXT) %>%
+  summarise(N.Plots = n())
+```
+
+```{r}
+LAWI.tb <- select(LAWI.tb, CLNR, LAWI)
+```
+
+### Human disturbance of Plot
+Vandegehuchte et al. did not consider human disturbance of the environment in their analysis.
+Comparing the relative influences of environmental characteristics and descriptions of human disturbances of the environment on red wood ant distributions is one of our key objectives in this current analysis.
+
+The NFI field and field derived data includes metrics of human disturbance.  
+I have reviewed these and extract those that hold potential to be relevant to Red Wood Ants.
+
+#### Dry Stone Wall &/ Heap of Stones = MID 217 = Trockenmauer und Steinhaufen = TROSTEI
+
+```{r}
+TROSTEI.tb <- select(RPA.raw.plot.tb, CLNR, TROSTEI, TROSTEITXT)
+```
+
+Categories:
+```{r}
+group_by(TROSTEI.tb, TROSTEI) %>%
+  summarise(TROSTEITXT = unique(TROSTEITXT)) %>%
+    mutate(English = c('Dry Stone Wall', 'Heap of Stones', 'Stone Walls & Heaps Present', 'Stone Walls & Heaps Absent')
+    ) %>% 
+      select(TROSTEITXT, English)
+```
+
+Examine the number of observations in each category:
+```{r}
+group_by(TROSTEI.tb, TROSTEI) %>%
+  summarise(N.Plots = n()) %>%
+    mutate(English = c('Dry Stone Wall', 'Heap of Stones', 'Stone Walls & Heaps Present', 'Stone Walls & Heaps Absent'))
+```
+
+Aggregate the categories to presence/absence of stone structures:
+```{r}
+TROSTEI.tb <- TROSTEI.tb %>%
+  mutate(Stone.Struc = case_when(
+    (TROSTEI == -1) ~ as.character(NA),
+    (TROSTEI %in% c(1,2,3)) ~ as.character('Present'),
+    (TROSTEI ==  4) ~ as.character('Absent')
+    )
+  )
+```
+
+Check:
+```{r}
+group_by(TROSTEI.tb, TROSTEI) %>%
+  summarise(Stone.Struc = unique(Stone.Struc))
+```
+
+```{r}
+TROSTEI.tb <- select(TROSTEI.tb, CLNR, Stone.Struc)
+
+group_by(TROSTEI.tb, Stone.Struc) %>%
+  summarise(N = n())
+```
+
+#### Excessive ecological pressure and disturbances = MID 219 = Überbelastung und Störungen = Ueberbelastung = UEBERBEL 
+Excessive stress to the stand or forest site caused by human activities other than logging
+```{r}
+UEBERBEL.tb <- select(RPA.raw.plot.tb, CLNR, UEBERBEL, UEBERBELTXT)
+```
+
+UEBERBEL.TXT values taken from NFI Field Manual:
+```{r}
+UEBERBEL.tb %>%
+  mutate(UEBERBEL.TXT = case_when(
+    UEBERBEL == -1  ~ 'Missing Data',
+    UEBERBEL ==  1  ~ 'None',
+    UEBERBEL ==  2  ~ 'Recreation', 
+    UEBERBEL ==  3  ~ 'Other', 
+    UEBERBEL ==  4  ~ 'Disposal site',
+    UEBERBEL ==  5  ~ 'Unmaintained drain',
+    UEBERBEL ==  6  ~ 'Maintained drain', 
+    UEBERBEL ==  7  ~ 'Construction')
+  ) %>%
+    group_by(UEBERBEL) %>%
+      summarise(UEBERBEL.TXT = unique(UEBERBEL.TXT), N.Plots = n())
+```
+
+The low numbers of observations in each category other than 'None' and all these categories being different sorts of excessive ecological stress lead me to recode this factor as 'present', 'absent' (and NA for missing data):
+```{r}
+UEBERBEL.tb <- mutate(UEBERBEL.tb, 
+    UEBERBEL.TXT = case_when( UEBERBEL == -1  ~ 'Missing Data',
+                              UEBERBEL ==  1  ~ 'None',
+                              UEBERBEL ==  2  ~ 'Recreation', 
+                              UEBERBEL ==  3  ~ 'Other', 
+                              UEBERBEL ==  4  ~ 'Disposal site',
+                              UEBERBEL ==  5  ~ 'Unmaintained drain',
+                              UEBERBEL ==  6  ~ 'Maintained drain', 
+                              UEBERBEL ==  7  ~ 'Construction'
+                            ),    
+    UEBERBEL.TXT2 = case_when(UEBERBEL == -1  ~ as.character(NA),
+                              UEBERBEL ==  1  ~ 'Absent',
+                              UEBERBEL ==  2  ~ 'Present', 
+                              UEBERBEL ==  3  ~ 'Present', 
+                              UEBERBEL ==  4  ~ 'Present',
+                              UEBERBEL ==  5  ~ 'Present',
+                              UEBERBEL ==  6  ~ 'Present', 
+                              UEBERBEL ==  7  ~ 'Present'
+                            )
+                         )
+```
+
+```{r}
+UEBERBEL.tb %>%
+  group_by(UEBERBEL) %>%
+    summarise(UEBERBEL.TXT = unique(UEBERBEL.TXT),
+              UEBERBEL.TXT2 = unique(UEBERBEL.TXT2), 
+              N.Plots = n())
+```
+
+```{r}
+UEBERBEL.tb <- select(UEBERBEL.tb, CLNR, UEBERBEL.TXT2) %>%
+  rename(UEBERBEL = UEBERBEL.TXT2)
+
+group_by(UEBERBEL.tb, UEBERBEL) %>%
+  summarise(N = n())
+```
+
+#### Recreational Facilities = MID 220 = Erholungseinrichtungen = ERHSST
+
+```{r}
+ERHSST.tb <- select(RPA.raw.plot.tb, CLNR, ERHSST, ERHSSTTXT)
+```
+
+```{r}
+group_by(ERHSST.tb, ERHSST) %>%
+  summarise(N.Plots = n(),
+            ERHSSTTXT = unique(ERHSSTTXT))
+```
+No variation so this will be of no use as a covariate.
+
+#### Type of Gap (in forest) = MID 221 = Lückentyp = LUECKEN
+
+```{r}
+LUECKEN.tb <- select(RPA.raw.plot.tb, CLNR, LUECKEN, LUECKENTXT)
+```
+
+```{r}
+LUECKEN.tb %>%
+  group_by(LUECKEN) %>%
+    summarise(N.Plot = n(),
+              LUECKENTXT = unique(LUECKENTXT)) %>%
+      mutate(English = c('None', 'Unstocked', 'Forest meadow', 'Ingrowing', 'Scree', 'Erosion', 'Bedrock', 'Aisle'))
+```
+
+The full descriptions of categories from NFI field manual:
+```{r}
+tribble(
+~LUECKEN, ~LUECKENTXT, ~Description,
+1, 'None', 'No gaps (width from drip border to drip border < 10 m).',
+2, 'Unstocked', 'Temporarily unstocked forest ground (e.g. windthrow).',
+3, 'Forest meadow', 'Forest meadow, pasture, tall forb community, wetland without shrubs or young trees.',
+4, 'Ingrowing', 'Ingrowing meadow, pasture, tall forb community, wetland; forest ground with scattered shrubs or young trees.',
+5, 'Scree', 'Scree',
+6, 'Erosion', 'Eroding and sliding area, slump.',
+7, 'Bedrock', 'Bedrock',
+8, 'Aisle', 'Gully, track, aisle, mudflow (permanently unstocked).'
+) %>%
+  knitr::kable()
+```
+
+Compressing the above categories to the following categories:
+ * None
+ * Unstocked
+ * Waldwiese
+ * Einwachsend
+ * Bare: Scree, Erosion, Bedrock, Aisle
+ 
+```{r}
+LUECKEN.tb <- mutate(LUECKEN.tb,
+                     LUECKEN.2 = case_when(
+                       (LUECKEN == -1) ~ as.character(NA),
+                       (LUECKEN ==  1) ~ 'None',
+                       (LUECKEN ==  2) ~ 'Unstocked',
+                       (LUECKEN ==  3) ~ 'Meadow',
+                       (LUECKEN ==  4) ~ 'Ingrowing',
+                       (LUECKEN %in% 5:8) ~ 'Bare')
+                     )
+```
+
+Check:
+```{r}
+group_by(LUECKEN.tb, LUECKEN) %>%
+  summarise(LUECKEN.2 = unique(LUECKEN.2))
+```
+
+```{r}
+LUECKEN.tb <- select(LUECKEN.tb, CLNR, LUECKEN.2) %>%
+  rename(LUECKEN = LUECKEN.2)
+
+group_by(LUECKEN.tb, LUECKEN) %>%
+  summarise(N = n())
+```
+ 
+#### Azonal site type = MID 222 = Azonale Standortstypen = Azonaler Standorttyp = AZOTYP
+To assess the site types where the dominant vegetation differs from the expected (zonal) climax vegetation due to a very different water regime or mechanical factors. For such sites it is not possible to derive or model vegetation from the altitude, aspect, soil acidity or soil moisture. They therefore have to be assessed in the field.
+
+```{r, rows.print = 16}
+filter(.data = raw.plot.tb, AMHAUSST == 1) %>%
+  select(CLNR, AZOTYP, AZOTYPTXT) %>%
+    group_by(AZOTYP, AZOTYPTXT) %>%
+      count()
+```
+
+Where AZOTYP is missing from LFI 4 data take values from LFI 3
+
+```{r}
+AZOTYP.LFI3.tb <- select(.data = Add.Plot.Data.LFI3.tb, CLNR, AZOTYP) %>%
+  rename(AZOTYP.LFI3 = AZOTYP)
+```
+
+```{r, rows.print = 16}
+AZOTYP.tb <- filter(.data = raw.plot.tb, AMHAUSST == 1) %>%
+  select(CLNR, AZOTYP) %>%
+    rename(AZOTYP.LFI4 = AZOTYP) %>%
+      left_join(y = AZOTYP.LFI3.tb, by = 'CLNR') %>%
+        mutate(AZOTYP = case_when(                       (AZOTYP.LFI4 > -1) ~ AZOTYP.LFI4,
+                                   (AZOTYP.LFI4 == -1) & !is.na(AZOTYP.LFI3) ~ AZOTYP.LFI3,
+                                   (AZOTYP.LFI4 == -1) &  is.na(AZOTYP.LFI3) ~ as.numeric(NA)
+                        )
+        ) %>%
+          select(CLNR, AZOTYP)
+
+group_by(AZOTYP.tb, AZOTYP) %>%
+  count()
+```    
+
+Only two missing values....
+
+
+0 < AZOTYP < 15 codes for different Azonal vegetation types
+
+AZOTYP = 15 codes for Zonal Vegetation
+
+We already have descriptions of the vegetation in the plot and this factor has few observations per level so we can compress this to a description of whether the vegetation in the plot (which is described by other covariates) is zonal. 
+This gives us a description of the whether the vegetation in the plot is to be expected from the other environmental conditions at the site. 
+This factor could mediate the nature of the influences vegetation and other environmental characteristics have on Red Wood Ant mound occurrence.
+Thus this factor could prove useful for its interactions with other explanatory variables.
+
+```{r}
+AZOTYP.tb <- mutate(AZOTYP.tb, Veg.Zon = case_when(
+  (AZOTYP == -1) ~ as.character(NA),
+  (AZOTYP > 0) & (AZOTYP < 15) ~ 'Azonal',
+  (AZOTYP == 15) ~ 'Zonal'
+  )
+)
+```
+check:
+```{r, rows.print = 16}
+group_by(AZOTYP.tb, AZOTYP, Veg.Zon) %>%
+  summarise(N.Plots = n())
+```
+
+```{r}
+group_by(AZOTYP.tb, Veg.Zon) %>%
+  summarise(N.Plots = n())
+```
+
+```{r}
+AZOTYP.tb <- select(AZOTYP.tb, CLNR, Veg.Zon) %>%
+  rename(AZOTYP = Veg.Zon)
+
+group_by(AZOTYP.tb, AZOTYP) %>%
+  summarise(N = n())
+```
+
+#### Soil Damage
+
+Checking number of presences in each of these three categories:
+
+**MID 491 Tracks from skidding = Schleifspuren = Schleifspur = SPSCHL	**
+
+```{r}
+SPSCHL.tb <- select(RPA.raw.plot.tb, CLNR, SPSCHL, SPSCHLTXT)
+                         
+SPSCHL.tb %>%
+  group_by(SPSCHL) %>%
+    summarise(SPSCHLTXT = unique(SPSCHLTXT), N.Plots = n()) %>%
+      mutate(English = c('Present', 'Absent'))
+```
+
+**MID 548 Tracks of trampling = Trampelspur = SPTRAM**
+```{r}
+SPTRAM.tb <- select(RPA.raw.plot.tb, CLNR, SPTRAM, SPTRAMTXT)
+
+SPTRAM.tb %>%
+  group_by(SPTRAM) %>%
+    summarise(SPTRAMTXT = unique(SPTRAMTXT), N.Plots = n())
+```
+Entirely missing data
+
+Christoph: "[Trampelspuren] was only assessed in NFI3 on accessible Plots. It was very,very, very rare and for sure not of relevance. Therefor in NFI4 is always the value -1 "Wert nicht ermittelt"."
+
+**MID 544 Vehicle tracks = Fahrzeugspuren = Fahrzeugspur = SPFRZ**
+```{r}
+SPFRZ.tb <- select(RPA.raw.plot.tb, CLNR, SPFRZ, SPFRZTXT)
+
+SPFRZ.tb %>%
+  mutate(English = case_when(SPFRZ == -1 ~ as.character(NA),
+                             SPFRZ ==  1 ~ 'Clear Tracks',
+                             SPFRZ ==  2 ~ 'Tracks Absent',
+                             SPFRZ ==  3 ~ 'Faint Tracks'
+                             )
+         ) %>%
+    group_by(SPFRZ) %>%
+      summarise(English = unique(English), SPFRZTXT = unique(SPFRZTXT), N.Plots = n())
+```
+
+The small numbers of observations within each category have motivated me to create a single variable that codes for the presence or absence of tracks of one sort or another in the plot.
+This variable can be thought to code for humans entering the plot, disrupting the ground cover and compressing the ground either with vehicles or by dragging felled trees through it.
+```{r}
+Tracks.tb <- select(RPA.raw.plot.tb, CLNR, SPSCHL, SPFRZ) %>%
+  mutate(Tracks = case_when( 
+    ( (SPFRZ == -1) & (SPSCHL == -1) )                     ~ as.character(NA),
+    ( (SPFRZ ==  1) | (SPFRZ ==  3) | (SPSCHL == 1) )      ~ 'Present',
+    ( (SPFRZ ==  2) & !(SPSCHL == 1) )                     ~ 'Absent',
+    ( (SPSCHL == 2) & !( (SPFRZ ==  1) | (SPFRZ ==  3) ) ) ~ 'Absent'
+                  )
+  )
+```
+
+Check:
+```{r}
+group_by(Tracks.tb, Tracks, SPSCHL, SPFRZ) %>%
+  summarise(N.Plots = n())
+```
+
+```{r}
+Tracks.tb <- select(Tracks.tb, CLNR, Tracks)
+```
+
+```{r}
+group_by(Tracks.tb, Tracks) %>%
+  summarise(N.Plots = n())
+```
+
+The remaining descriptions of soil damage seem all to quantify characteristics of the vehicle tracks in 288 or 431 plots (see below).
+This seems too small a fraction of the data to be particularly useful so I'm going to restrict our set of covariates here to only include the covariates I created that codes for the presence or absence of tracks of any type in the plot.
+
+**MID 496 Soil damage type = Bodenschadentyp = SPSCHAD**
+Soil damage in vehicle tracks.
+Examine the among of variation in soil damage type:
+```{r}
+Soil.Damage.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Bodenschäden_2009-2017_Rohdaten.xlsx', sheet = 'SQL Results')
+```
+
+```{r}
+SPSCHAD.tb <- select(Soil.Damage.tb, CLNR, SPSCHAD, SPSCHADTXT)
+
+group_by(SPSCHAD.tb, SPSCHAD, SPSCHADTXT) %>%
+  summarise(N.Plots = n())
+```
+
+thus most of the ~6000 plots (CLNR's) lack an entry for `SPSCHAD`
+
+** MID 503 Depth of wheel track = Radspurtiefe = Radspurtiefe = Spurtiefe = SPTIEF **
+```{r}
+SPTIEF.tb <- select(Soil.Damage.tb, CLNR, SPTIEF)
+
+pull(SPTIEF.tb, CLNR) %>%
+  unique() %>%
+    length()
+```
+
+```{r}
+summary(SPTIEF.tb$SPTIEF)
+```
+
+** MID 498 Track age = Spuralter = SPALT **
+```{r}
+SPALT.tb <- select(Soil.Damage.tb, CLNR, SPALT, SPALTTXT)
+
+pull(SPALT.tb, CLNR) %>%
+  unique() %>%
+    length()
+```
+
+```{r}
+unique(SPALT.tb$SPALT)
+```
+```{r}
+group_by(SPALT.tb, SPALT) %>%
+  summarise(N = n())
+```
+
+**MID 506 Degree of cover of soil damage (%) = Deckungsgrad Bodenschaden = SPFLDG**
+Area damaged by vehicle tracks
+```{r}
+SPFLDG.tb <- select(RPA.raw.plot.tb, CLNR, SPFLDG)
+
+group_by(SPFLDG.tb, SPFLDG) %>%
+  summarise(N.Plots = n())
+```
+Some of these NA's will be where soil damage was assessed and found to be zero hence SPFLDG should also be zero in those plots.  Thus if we were going to use SPFLDG it would need to be recoded accordingly.
+
+```{r}
+filter(SPFLDG.tb, !is.na(SPFLDG)) %>%
+  pull(CLNR) %>%
+    unique() %>%
+      length()
+```
+
+#### Areal Damage
+
+**Status of assessment of areal damage = MID 566 = Status der Flächenschadenaufnahme = FLSCHADSST**
+
+Code 1 = Assessment of areal damage accomplished.
+
+```{r}
+select(RPA.raw.plot.tb, CLNR, FLSCHADSST, WNWENTTXT) %>%
+  group_by(FLSCHADSST, WNWENTTXT) %>%
+    summarise(N.Plots = n())
+```
+
+Thus an assessment of areal damage was accomplished in all Wald and Gebüschwald plots that were searched for ant mounds.
+
+```{r}
+FLSCHADSST.tb <- select(RPA.raw.plot.tb, CLNR, FLSCHADSST, FLSCHADSSTTXT)
+
+group_by(FLSCHADSST.tb, FLSCHADSST, FLSCHADSSTTXT) %>%
+  summarise(N.Plots = n())
+```
+
+**Number of areal damage = MID 587 = Number of areal damage = Flächenschadennummer = FLSCHADNR**
+Two incidences of areal damage can be registered. If there are more than two incidences, then the two most significant (causing areal damage) have to be assessed.
+
+```{r}
+Areal.Damage.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Flächenschäden_2009-2017_Rohdaten.xlsx', sheet = 'SQL Results')
+```
+
+```{r}
+FLSCHADNR.tb <- select(Areal.Damage.tb, CLNR, FLSCHADNR)
+```
+
+Each plot had either 1 or 2 areas of damage assessed `FLSCHADNR` specifies which the row refers to 
+```{r}
+group_by(FLSCHADNR.tb, CLNR) %>%
+  summarise(N.FLSCHADNR = length(unique(FLSCHADNR))) %>%
+    group_by(N.FLSCHADNR) %>%
+      summarise(N = n())
+```
+
+**Area Damage = Flaechenschaden = FLSCHADEN**
+```{r}
+FLSCHADEN.tb <- select(Areal.Damage.tb, CLNR, FLSCHADEN, FLSCHADENTXT)
+```
+
+```{r rows.print=13}
+group_by(FLSCHADEN.tb, FLSCHADEN, FLSCHADENTXT) %>%
+  summarise(N.Plots = n())
+```
+
+```{r}
+pull(FLSCHADEN.tb, CLNR) %>%
+  unique() %>%
+    length()
+```
+
+Creating a variable for the presence/absence of areal damage (243 presences, remainder missing or absent):
+```{r, rows.print = 13}
+group_by(FLSCHADEN.tb, FLSCHADEN, FLSCHADENTXT) %>% count()
+```
+
+FLSCHADEN value between 1 and 15 each code for a type of areal damage
+
+```{r}
+FLSCHADEN.PA.tb <- group_by(FLSCHADEN.tb, CLNR) %>% 
+                     summarise(N.FLSCHADEN = length(unique(FLSCHADEN))) %>%
+                       mutate(FLSCHADEN.PA = 'Present')
+```
+
+Check for duplicated rows
+```{r, rows.print = 13}
+group_by(FLSCHADSST.tb, CLNR) %>% count() %>% summary()
+```
+
+Check all CLNR that were searched for ants are present in FLSCHADSST.tb
+```{r}
+summary(FLSCHADSST.tb$CLNR %in% RPA.raw.plot.tb$CLNR)
+```
+
+```{r}
+Areal.Damage.RF.tb <- left_join(FLSCHADSST.tb, FLSCHADEN.PA.tb, by = 'CLNR') %>%
+  mutate(Areal.Damage = case_when((FLSCHADSST == -1) ~ as.character(NA),
+                                   !(FLSCHADSST == -1) & is.na(FLSCHADEN.PA) ~ 'Absent',
+                                   !(FLSCHADSST == -1) & !is.na(FLSCHADEN.PA) ~ FLSCHADEN.PA
+                                  )
+  )  
+```
+
+```{r}
+Areal.Damage.RF.tb <- select(Areal.Damage.RF.tb, CLNR, Areal.Damage) %>%
+  rename(FLSCHADEN = Areal.Damage)
+```
+
+```{r}
+group_by(Areal.Damage.RF.tb, FLSCHADEN) %>%
+  summarise(N.Plots = n())
+```
+
+**Type of areal damage, field survey = MID 346 = Art der Flächenschäden, Feldaufnahme =  Art des Flachenschadens, Umfrage = FLSCHUMF **
+
+```{r}
+'FLSCHUMF' %in% colnames(Areal.Damage.tb)
+```
+
+```{r}
+'FLSCHUMF' %in% colnames(RPA.raw.plot.tb)
+```
+
+**Extent of areal damage, field survey = MID 601 = MID 601 Ausmass der Flächenschäden, Feldaufnahme (%, 10-100) = 	FLSCHADDG	= Flachenschadenausmass**
+
+```{r}
+summary(is.na(RPA.raw.plot.tb$FLSCHADDG))
+```
+
+only 237 values with the remainder missing, hence I exclude this variable
+
+**State of clearing = MID 256 = Räumungszustand = RAEUMZST**
+The areal damage and the state of clearing of the damaged area
+```{r}
+group_by(RPA.raw.plot.tb, RAEUMZST, RAEUMZSTTXT) %>%
+  summarise(N = n())
+```
+
+```{r}
+group_by(RPA.raw.plot.tb, RAEUMZST) %>%
+  summarise(N = n()) %>%
+    mutate(English = c('No areal damage', 'Not cleared', 'Partly cleared', 'Completely cleared'))
+```
+Again these are descriptions the areal damage in the of 238 plots with some areal damage.
+Here I do not think we have sufficient replication within the different levels pertaining to damaged plots to use these different levels.
+Thus I will confine our treatment of areal damage to the binary variable for its presence/absence created above.
+
+
+
+## Aggregation of NFI data prepared above for use as covariates:
+```{r}
+NFI.Plot.Data <- purrr::reduce(.x = list(Prct.Cvr.Uppr.Layer.tb,
+                                         Layer.Cover.tb,
+                                         SCHLART.tb,
+                                         Derived.Plot.Data.tb, 
+                                         Plot.Raw.Data.tb, 
+                                         DDOM.tb, 
+                                         SCHNLANG.tb, 
+                                         LAWI.tb, 
+                                         TROSTEI.tb, 
+                                         UEBERBEL.tb, 
+                                         LUECKEN.tb, 
+                                         AZOTYP.tb, 
+                                         Tracks.tb, 
+                                         Areal.Damage.RF.tb
+                                        ), 
+                               .f = full_join, by = 'CLNR')
+
+anyNA(NFI.Plot.Data)
+```
+
+Check that all plots that were searched for ant mounds are present in the final joined data:
+```{r}
+summary(RPA.raw.plot.tb$CLNR %in%  NFI.Plot.Data$CLNR)
+```
+
+Check for duplicated CLNR in NFI.Plot.Data
+```{r}
+group_by(NFI.Plot.Data, CLNR) %>%
+  count() %>%
+    group_by(n) %>%
+      count()
+```
+
+The explanatory variables prepared from the NFI Field Data:
+```{r}
+select(NFI.Plot.Data, -CLNR) %>%
+  colnames() %>%
+    sort()
+```
+
+#### Examining the Prepared Data
+
+These data consist of 6357
+```{r}
+nrow(NFI.Plot.Data)
+```
+observations.
+
+These data contain 105 potential covariates plus the plot identifier CLNR. 
+```{r}
+ncol(NFI.Plot.Data)
+```
+
+#### Examining the Missing Observations 
+
+```{r, fig.width = 12, fig.height = 12}
+select(NFI.Plot.Data, -CLNR) %>%
+  select_if(anyNA) %>%
+    vis_miss(x = ., sort_miss = TRUE, cluster = TRUE, warn_large_data = FALSE) + theme(axis.text.x = element_text(angle = 90, hjust = 0, vjust = 0.5))
+```
+
+Ploting only the explanatory variables that are missing one or more observations:
+
+```{r, fig.width = 12, fig.height = 12}
+select_if(.tbl = NFI.Plot.Data, anyNA) %>%
+  vis_miss(x = ., sort_miss = TRUE, cluster = TRUE, warn_large_data = FALSE) + theme(axis.text.x = element_text(angle = 90, hjust = 0, vjust = 0.5))
+```
+
+What is immediately striking about this plots is that there is a group of plots for which the same set of explanatory variables are missing.
+These plots are all missing the following variables:
+
+ * STZ_*
+ * TOSTZ_*
+ * V_*
+ * TOV_*
+ * BAS_*
+
+STZ = extrapolated stem number of living trees from BHD 12 per ha STZ = extrapolated source number of living trees from BHD 12 per ha
+
+TOSTZ = extrapolated stem number of dead trees from BHD 12 per ha TOSTZ = extrapolated source number of dead trees from BHD 12 per ha
+
+V = extrapolated volume of living trees from BHD 12 per ha V = extrapolated volume of living trees from BHD 12 per hectare
+
+TOV = extrapolated volume of dead trees from BHD 12 per ha TOV = extrapolated volume of dead trees from BHD 12 per hectare
+
+BAS = extrapolated basal area of standing living trees from BHD 12 trees per ha
+
+```{r, fig.width = 12, fig.height = 12}
+select(NFI.Plot.Data, matches('^STZ\\_|^TOSTZ\\_|^V\\_|^TOV\\_|^BAS\\_')) %>%
+    vis_miss(x = ., sort_miss = TRUE, cluster = TRUE, warn_large_data = FALSE) + theme(axis.text.x = element_text(angle = 90, hjust = 0, vjust = 0.5))
+```
+
+I've asked Christoph about this and he says that these plots probably lacked sample trees because 'because of a very young stand and no trees above 11 cm dbh or very open stands with no trees inside the 500-m2-circle. Therefore we don't have information about STZ, TOSTZ, V, TOV ...'
+We discussed this and decided that it makes sense to replaces these missing values with zero.
+Recall that a random forest is a collection of many decision trees and that decision trees use binary partitions of the data based on threshold values of explanatory variables.
+Consequently, replacing explanatory variable values that are missing but known to be very small with zeros is less of an issue in data preparation for a random forest than it would be in data preparation for a multiple linear regression.
+
+Performing this action:
+
+```{r}
+NFI.Plot.Data.v2 <- mutate_at(.tbl = NFI.Plot.Data,
+                              .vars = vars(matches('^STZ\\_|^TOSTZ\\_|^V\\_|^TOV\\_|^BAS\\_')),
+                              .funs = function(x) case_when( !is.na(x) ~ x, is.na(x) ~ 0)
+                    )
+```
+
+First check: have all the missing values in STZ_*, TOSTZ_*, V_* and TOV_* been replaced with non missing values?
+
+```{r, fig.width = 12, fig.height = 12}
+select(NFI.Plot.Data.v2, matches('^STZ\\_|^TOSTZ\\_|^V\\_|^TOV\\_|^BAS\\_')) %>%
+    vis_miss(x = ., sort_miss = TRUE, cluster = TRUE, warn_large_data = FALSE) + theme(axis.text.x = element_text(angle = 90, hjust = 0, vjust = 0.5))
+```
+
+Check passed.
+
+Second check: are the values in all the other columns unchanged?
+
+```{r}
+identical(select(NFI.Plot.Data, -matches('^STZ\\_|^TOSTZ\\_|^V\\_|^TOV\\_')),
+          select(NFI.Plot.Data.v2, -matches('^STZ\\_|^TOSTZ\\_|^V\\_|^TOV\\_')))
+```
+
+Check passed.
+
+
+Third check: are the values that were NA in STZ_*, TOSTZ_*, V_* and TOV_* been replaced with zeros?
+
+```{r}
+filter_at(.tbl = NFI.Plot.Data,
+          .vars = vars(matches('^STZ\\_|^TOSTZ\\_|^V\\_|^TOV\\_')),
+          .vars_predicate = all_vars(is.na(.))) %>%
+  select(.data = ., CLNR) %>%
+    left_join(x = ., y = NFI.Plot.Data.v2, by = 'CLNR') %>%
+      select(matches('^STZ\\_|^TOSTZ\\_|^V\\_|^TOV\\_')) %>%
+        summarise_all(.funs = unique) %>%
+          mutate(test = rowSums(.)) %>%
+            pull(test)
+```
+
+Check passed.
+
+Thus is is safe to consider `NFI.Plot.Data.v2` our correctly revised tibble and to move forward.
+
+Examining the remaining missing values:
+
+```{r, fig.width = 12, fig.height = 12}
+select_if(NFI.Plot.Data.v2, anyNA) %>%
+  vis_miss(x = ., sort_miss = TRUE, cluster = TRUE, warn_large_data = FALSE) + theme(axis.text.x = element_text(angle = 90, hjust = 0, vjust = 0.5))
+```
+
+Examining just the variables and plots that contain one or more missing observations: 
+```{r, fig.width = 12, fig.height = 12}
+filter_all(.tbl = NFI.Plot.Data.v2, .vars_predicate = any_vars(is.na(.))) %>%
+  select_if(anyNA) %>%
+    vis_miss(x = ., sort_miss = TRUE, cluster = TRUE, warn_large_data = FALSE) + theme(axis.text.x = element_text(angle = 90, hjust = 0, vjust = 0.5))
+```
+
+```{r}
+select_if(NFI.Plot.Data.v2, anyNA) %>%
+  colnames()
+```
+
+25 of the 36 plots that are missing values from our combined variable BESTALT.AGEDOM are missing from plots which are classed as temporarily unstocked forest.
+```{r}
+NUTZKAT.tb <- select(raw.plot.tb, CLNR, NUTZKAT)
+
+left_join(x = NFI.Plot.Data.v2, y = NUTZKAT.tb, by = 'CLNR') %>%
+  filter(is.na(BESTALT.AGEDOM)) %>%
+    group_by(NUTZKAT) %>%
+      count()
+```
+
+Of our plots with Red Wood Ant mounds present only three had missing values in one or more of the explanatory variables I have prepared above:
+```{r}
+left_join(x = NFI.Plot.Data.v2, y = RWA.Mound.PA.tb, by = 'CLNR') %>%
+  filter(RWAM.PA == 1) %>%
+    select_if(anyNA) %>%
+      filter_all(.vars_predicate = any_vars(is.na(.))) 
+```
+
+#### Final Examination of the Aggregated, Prepared Data:
+
+```{r}
+NFI.Plot.Data <- NFI.Plot.Data.v2
+```
+
+The prepared data contain 106 potential explanatory variables for our models of Red Wood Ant mound occurence.
+```{r}
+select(NFI.Plot.Data, -CLNR) %>%
+  ncol()
+```
+
+These variables are summarised in the Tables below.
+
+Abbreviations for Tree Categories and species that are members of these categories:
+
+| Group | Member Species                                                                                 |
+|------:|-----------------------------------------------------------------------------------------------:|
+| AHORN | *Acer campestris*, *Acer platanoides*, *Acer pseudoplatanus* & *Acer opalus*                   |
+| ARVEN | *Pinus cembra*                                                                                 |
+| BUCHE | *Fagus sylvatica*                                                                              |
+| CASTA | *Castanea sativa*                                                                              |
+| CONIF | All Conifers                                                                                   |
+| DECID | All Broadleaf (Deciduous)                                                                      |
+| EICHE | *Quercus robur*, *Quercus petraea*, *Quercus pubescens*, *Quercus cerris* & *Quercus rubra*    |
+| ESCHE | *Fraxinus excelsior*, *Fraxinus ornus*                                                         |
+| FICHT | *Picea abies*                                                                                  |
+| FOEHR | *Pinus sylvestris*, *Pinus nigra*, *Pinus strobus*, *Pinus mugo arborea* & *Pinus spec.*       |
+| LARCH | *Larix decidua* & *Larix kaempferi*                                                            | 
+| TANNE | *Abies alba* & *Abies sp.*                                                                     |
+| UENDH | Other Conifers                                                                                 |
+| UELBH | Other Broadleaf (Deciduous)                                                                    |
+
+
+
+Types: C = Categorical, N = Numeric
+
+| Variable             | Type | Levels | Explanation                                                               |
+|:---------------------|:-----|-------:|--------------------------------------------------------------------------:|
+|AHAUFEN               | C    |  2     | Heaps of branches Presence/Absence                                        |
+|AZOTYP                | C    |  2     | Vegetation Zonal/Azonal                                                   |
+|BAS_AHORN             | N    |        | extrapolated basal area of standing, live AHORN trees per ha              |
+|BAS_ALL               | N    |        | extrapolated basal area of all standing, live trees per ha                |
+|BAS_ARVEN             | N    |        | extrapolated basal area of standing, live ARVEN trees per ha              |               
+|BAS_BUCHE             | N    |        | extrapolated basal area of standing, live BUCHE trees per ha              |
+|BAS_CASTA             | N    |        | extrapolated basal area of standing, live CASTA trees per ha              |
+|BAS_CONIF             | N    |        | extrapolated basal area of standing, live CONIF trees per ha              |
+|BAS_EICHE             | N    |        | extrapolated basal area of standing, live EICHE trees per ha              |
+|BAS_ESCHE             | N    |        | extrapolated basal area of standing, live ESCHE trees per ha              |
+|BAS_FICHT             | N    |        | extrapolated basal area of standing, live FICHT trees per ha              |
+|BAS_FOEHR             | N    |        | extrapolated basal area of standing, live FOEHR trees per ha              |
+|BAS_LARCH             | N    |        | extrapolated basal area of standing, live LARCH trees per ha              |
+|BAS_TANNE             | N    |        | extrapolated basal area of standing, live TANNE trees per ha              |
+|BEERDG                | N    |        | Percentage Cover by Berry Bushes                                          |
+|BESTALT.AGEDOM        | N    |        | Estimate of the dominant age of trees                                     |
+|BESTOBER              | N    |        | Average height of the 100 tallest trees and shrubs per hectare            |
+|BODVEGDG              | N    |        | Percentage cover of ground vegetation                                     |
+|DDOM                  | N    |        | Dominant diameter at breast height of standing, live trees                |
+|DUERSTA               | C    | 2      | Presence/Absence Standing Dead Trees                                      |
+|FLSCHADEN             | C    | 2      | Presence/Absence of Areal Damage                                          |
+|GEWAESS               | C    | 2      | Presence/Absence of Flowing/Still Water                                   |
+|LAWI                  | C    | 2      | Presence/Absence of Traces of Avalanches                                  |
+|LUECKEN               | C    | 5      | Type (or Absence) of Gap in Forest                                        |
+|Mittelschicht         | N    |        | Coverage of Middle Layer of Forest                                        |
+|Oberschicht           | N    |        | Coverage of Upper Layer of Forest                                         |
+|Prct.Ahorn            | N    |        | Percentage Cover in Upper Layer of Forest by AHORN                        |
+|Prct.Arven            | N    |        | Percentage Cover in Upper Layer of Forest by ARVEN                        |
+|Prct.Buche            | N    |        | Percentage Cover in Upper Layer of Forest by BUCHE                        |
+|Prct.Casta            | N    |        | Percentage Cover in Upper Layer of Forest by CASTA                        |
+|Prct.Conif            | N    |        | Percentage Cover in Upper Layer of Forest by Conifers                     |
+|Prct.Decid            | N    |        | Percentage Cover in Upper Layer of Forest by Broadleaf trees              |
+|Prct.Eiche            | N    |        | Percentage Cover in Upper Layer of Forest by EICHE                        |
+|Prct.Esche            | N    |        | Percentage Cover in Upper Layer of Forest by ESCHE                        |
+|Prct.Ficht            | N    |        | Percentage Cover in Upper Layer of Forest by FICHT                        |
+|Prct.Foehr            | N    |        | Percentage Cover in Upper Layer of Forest by FOEHR                        |
+|Prct.Larch            | N    |        | Percentage Cover in Upper Layer of Forest by LARCH                        |
+|Prct.Tanne            | N    |        | Percentage Cover in Upper Layer of Forest by TANNE                        |
+|SCHLART.Mittelschicht | C    | 3      | Type of canopy closure of middle layer of forest                          |
+|SCHLART.Oberschicht   | C    | 3      | Type of canopy closure of upper layer of forest                           |
+|SCHLART.Unterschicht  | C    | 3      | Type of canopy closure of lower layer of forest                           |
+|SCHLUSSG              | C    | 9      | Type of Crown Closure                                                     |
+|SCHNLANG              | C    | 2      | Presence/Absence of traces of slow snowpack movement                      |
+|STOECKE               | C    | 2      | Presence/Absence of stumps and/or lying dead wood                         |
+|Stone.Struc           | C    | 2      | Presence/Absence of stone structures                                      |
+|STRADG                | N    |        | Percentage cover of shrub layer                                           |
+|STRUK                 | C    | 5      | Vertical structure of the stand                                           |
+|STZ_AHORN             | N    |        | extrapolated number of living AHORN trees per ha                          |
+|STZ_ALL               | N    |        | extrapolated number of living trees per ha                                |
+|STZ_ARVEN             | N    |        | extrapolated number of living ARVEN trees per ha                          |
+|STZ_BUCHE             | N    |        | extrapolated number of living BUCHE trees per ha                          |
+|STZ_CASTA             | N    |        | extrapolated number of living CASTA trees per ha                          |
+|STZ_CONIF             | N    |        | extrapolated number of living Coniferous trees per ha                     |
+|STZ_EICHE             | N    |        | extrapolated number of living EICHE trees per ha                          |
+|STZ_ESCHE             | N    |        | extrapolated number of living ESCHE trees per ha                          |
+|STZ_FICHT             | N    |        | extrapolated number of living FICHT trees per ha                          |
+|STZ_FOEHR             | N    |        | extrapolated number of living FOEHR trees per ha                          |
+|STZ_LARCH             | N    |        | extrapolated number of living LARCH trees per ha                          |
+|STZ_TANNE             | N    |        | extrapolated number of living TANNE trees per ha                          |
+|TOSTZ_AHORN           | N    |        | extrapolated number of dead AHORN trees per ha                            |
+|TOSTZ_ALL             | N    |        | extrapolated number of dead trees per ha                                  | 
+|TOSTZ_ARVEN           | N    |        | extrapolated number of dead ARVEN trees per ha                            |
+|TOSTZ_BUCHE           | N    |        | extrapolated number of dead BUCHE trees per ha                            |
+|TOSTZ_CASTA           | N    |        | extrapolated number of dead CASTA trees per ha                            | 
+|TOSTZ_CONIF           | N    |        | extrapolated number of dead Coniferous trees per ha                       |
+|TOSTZ_EICHE           | N    |        | extrapolated number of dead EICHE trees per ha                            |
+|TOSTZ_ESCHE           | N    |        | extrapolated number of dead ESCHE trees per ha                            |
+|TOSTZ_FICHT           | N    |        | extrapolated number of dead FICHT trees per ha                            |
+|TOSTZ_FOEHR           | N    |        | extrapolated number of dead FOEHR trees per ha                            |
+|TOSTZ_LARCH           | N    |        | extrapolated number of dead LARCH trees per ha                            |
+|TOSTZ_TANNE           | N    |        | extrapolated number of dead TANNE trees per ha                            |
+|TOV_AHORN             | N    |        | extrapolated volume of dead AHORN trees per hectare                       |
+|TOV_ALL               | N    |        | extrapolated volume of dead trees per hectare                             |
+|TOV_ARVEN             | N    |        | extrapolated volume of dead ARVEN trees per hectare                       |
+|TOV_BUCHE             | N    |        | extrapolated volume of dead BUCHE trees per hectare                       |
+|TOV_CASTA             | N    |        | extrapolated volume of dead CASTA trees per hectare                       |
+|TOV_CONIF             | N    |        | extrapolated volume of dead Coniferous trees per hectare                  |
+|TOV_EICHE             | N    |        | extrapolated volume of dead EICHE trees per hectare                       |
+|TOV_ESCHE             | N    |        | extrapolated volume of dead ESCHE trees per hectare                       |
+|TOV_FICHT             | N    |        | extrapolated volume of dead FICHT trees per hectare                       |
+|TOV_FOEHR             | N    |        | extrapolated volume of dead FOEHR trees per hectare                       |
+|TOV_LARCH             | N    |        | extrapolated volume of dead LARCH trees per hectare                       |
+|TOV_TANNE             | N    |        | extrapolated volume of dead TANNE trees per hectare                       |
+|Tracks                | C    | 2      | Presence/Absence of tracks                                                |
+|UEBERBEL              | C    | 2      | Presence/Absence of excessive ecological pressure/disturbances            |
+|Unterschicht          | N    |        | Coverage of Upper Layer of Forest                                         |
+|V_AHORN               | N    |        | extrapolated volume of live AHORN trees per hectare                       |
+|V_ALL                 | N    |        | extrapolated volume of live trees per hectare                             |
+|V_ARVEN               | N    |        | extrapolated volume of live ARVEN trees per hectare                       |
+|V_BUCHE               | N    |        | extrapolated volume of live BUCHE trees per hectare                       |
+|V_CASTA               | N    |        | extrapolated volume of live CASTA trees per hectare                       |
+|V_CONIF               | N    |        | extrapolated volume of live Coniferous trees per hectare                  |
+|V_EICHE               | N    |        | extrapolated volume of live EICHE trees per hectare                       |
+|V_ESCHE               | N    |        | extrapolated volume of live ESCHE trees per hectare                       |
+|V_FICHT               | N    |        | extrapolated volume of live FICHT trees per hectare                       |
+|V_FOEHR               | N    |        | extrapolated volume of live FOEHR trees per hectare                       |
+|V_LARCH               | N    |        | extrapolated volume of live LARCH trees per hectare                       |
+|V_TANNE               | N    |        | extrapolated volume of live TANNE trees per hectare                       |
+|VERJDG                | N    |        | Percentage of cover of regeneration                                       |
+|VORHERBA.HABART       | C    |  14    | Dominant tree species/group according to basal area                       |
+|VORHERNL.InFill       | C    |   3    | Dominant tree group according to basal area (Conifers/Broadleafs/Unknown) |
+|WARA                  | C    |   2    | Presence/Absence of Forest edge                                           |
+|WEID                  | C    |   2    | Presence/Absence of evidence of grazing by animals.                       |
+|WFRM                  | C    |   3    | Forest structure (form)                                                   |
+|WNWENTTXT             | C    |   2    | Forest / Scrub Forest                                                     |
+|WUTEAKT               | C    |   2    | Presence/Absence of Root Plates                                           |
+
+
+#### Writing out the Prepared Data
+
+```{r, eval = FALSE}
+save(list = 'NFI.Plot.Data', file = '~/rwa/data/NFI/Prepared_Field_Data/NFI.Plot.Data.Infilled.RData')
+```

@@ -1,0 +1,551 @@
+---
+title: "S9 Model Interpretation"
+author: "Author Blank for Double Blind Peer Review"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Introduction
+
+In this file I investigate the importance of the explanatory variables in Model 1 (the model fitted using the full set of explanatory variables I prepared).
+I then examine the roles of the six most important explanatory variables in this model using Individual Conditional Expectation Plots.
+The final section contains some investigations to aid interpretation of the roles of some of the the most important explanatory variables in Model 1.
+
+## Examining the Relative Importance of Explantory Variables in Model 1
+
+To examined the stability of the variable importance scores obtained from the ‘party’ package I have refitting conditional inference forests to our data 50 times using the tuning parameters selected by cross validation and setting a different random seed each time.  
+I have then calculated the AUC based conditional variable importance scores for each of these conditional inference forests.
+Below I produce boxplots of the distributions of the conditional variable importance scores associated with the explanatory variables ranked in order of decreasing mean variable importance.
+
+### Load the packages:
+
+```{r, message = FALSE, warn = FALSE}  
+library('glue')
+library('ICEbox')
+library('party')
+library('gridExtra')
+library('grid')
+library('cowplot')
+library('heatmaply')
+library('tidyverse')
+```
+
+### Load the conditional variable importance scores from the fifty conditional inference forests.
+
+```{r}
+results.chr <- list.files(path = '~/rwa/party_data/variable_importance/')
+
+vi.tb <- map_dfr(.x = results.chr,
+                 .f = function(x){
+                        load(paste0('~/rwa/party_data/variable_importance/', x))
+                         vi.ls.sym <- str_remove(string = x, pattern = '\\.RData') %>%
+                                        glue('.ls') %>%                                       
+                                          sym()
+                         VI.i.tb <- eval(
+                                      expr(
+                                        map_dfr(!!vi.ls.sym,
+                                                function(x){
+                                                  tibble(Variable = names(x), Importance = x)
+                                                },
+                                               .id = 'Permutation'
+                                        )
+                                      )
+                                    )
+                         return(VI.i.tb)
+                      },
+                 .id = 'Forest'
+         )
+
+slice(vi.tb, 1:10)
+```
+
+Some checks:
+
+```{r}
+results.chr[[4]]
+```
+
+```{r}
+load('~/rwa/party_data/variable_importance/cforest.12.vi.RData')
+
+cf.12.test.tb <- tibble(Variable = names(cforest.12.vi.ls[[6]]),
+                       Importance.Manual = cforest.12.vi.ls[[6]]
+                )
+
+filter(vi.tb, Forest == 4, Permutation == 6) %>%
+  left_join(y = cf.12.test.tb, by = 'Variable') %>%
+    mutate(Test = Importance - Importance.Manual) %>%
+      pull(Test) %>%
+        unique()
+```
+
+Check passed
+
+```{r}
+results.chr[[7]]
+```
+
+```{r}
+load('~/rwa/party_data/variable_importance/cforest.15.vi.RData')
+```
+
+```{r}
+cf.15.p.9.tb <- tibble(Variable = names(cforest.15.vi.ls[[9]]),
+                      Importance.Manual = cforest.15.vi.ls[[9]]
+                )
+
+filter(vi.tb, Forest == 7, Permutation == 9) %>%
+  left_join(y = cf.15.p.9.tb, by = 'Variable') %>%
+    mutate(Test = Importance - Importance.Manual) %>%
+      pull(Test) %>%
+        unique() == 0
+```
+
+Check passed
+
+### Plot the distributions of variable importance scores:
+
+#### rank the variables by mean importance score
+
+```{r}
+mean.var.imp.tb <- group_by(.data = vi.tb, Variable) %>%
+  summarise(mean.Importance = mean(Importance)) %>%
+    arrange(desc(mean.Importance))
+```
+
+#### boxplots of the variable importance scores obtained from all conditional inference forests for all variables:
+
+```{r, fig.width = 12}
+
+mutate(vi.tb, Variable.ro = fct_relevel(.f = Variable, mean.var.imp.tb$Variable)) %>%
+  ggplot(aes(x = Variable.ro, y = Importance)) +
+    geom_boxplot() +
+      labs(x = 'Explanatory Variable') +
+      theme_bw() +
+      theme(axis.text.x = element_text(size = 6, angle = 90, vjust = 0.5, hjust = 1))
+```
+
+#### boxplots of the variable importance scores obtained from all conditional inference forest for the 10 variables with the highest mean variable importance scores:
+
+```{r, fig.width = 12}
+cf.vi.top.10.b.plots <- mutate(vi.tb, Variable.ro = fct_relevel(.f = Variable, mean.var.imp.tb$Variable)) %>%
+  filter(Variable.ro %in% mean.var.imp.tb$Variable[1:10]) %>%
+    ggplot(aes(x = Variable.ro, y = Importance)) +
+      geom_jitter(alpha = 0.1, colour = 'grey') +
+      geom_boxplot(outlier.shape = NA, alpha = 0.5) +
+      labs(x = NULL, y = 'Conditional Variable Importance') +
+      theme_bw() + 
+      theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+cf.vi.top.10.b.plots
+```
+
+The sharp decline in conditional variable importance scores with decreasing mean variable importance scores lead me to focus on interpreting the six explanatory variables with the highest mean conditional variable importance scores.
+
+#### Table 1
+
+```{r}
+Mean.CVI.tb <- group_by(vi.tb, Variable) %>%
+  summarise(Mean.Importance = mean(Importance)) %>%
+    arrange(desc(Mean.Importance))
+
+max.mean.cvi <- pull(Mean.CVI.tb, Mean.Importance) %>% max()
+
+Top.10.MCVI.tb <- mutate(vi.tb, Importance.RS = 100*Importance/max.mean.cvi) %>%
+  group_by(Variable) %>%
+    summarise(Mean.Importance.RS = mean(Importance.RS), 
+                SD.Importance.RS = sd(Importance.RS)) %>%
+      mutate(Mean.Importance.Rounded.RS = round(Mean.Importance.RS, digits = 2),
+               SD.Importance.Rounded.RS = round(SD.Importance.RS, digits = 2)) %>%
+        arrange(desc(Mean.Importance.RS)) %>%
+          select(Variable, Mean.Importance.Rounded.RS, SD.Importance.Rounded.RS) %>%
+            slice(1:10)
+
+knitr::kable(Top.10.MCVI.tb)
+```
+
+## Examining the Roles of the Six Most Important Variables in Model 1
+
+I have examined the nature of the roles served by the six explanatory variables with the highest mean conditional variable importance scores in Model 1 by means of a reimplementation of individual conditional expectation (ICE) plots (Goldstein et al. 2015).  We performed this reimplementation to add two capabilities to ICE plots not present in the original implementation.  The first capability we added to ICE plots enabled faceting the ICE plots by a second explanatory variable suspected of interacting with the explanatory variable on the horizontal axis of the ICE plot.  The second capability we added to ICE plots was to vary the transparency of lines that compose the ICE plot.  Each of the lines that comprise an ICE plot is associated with a different observation.  We made the transparency of each line proportional to the distance along the horizontal axis from the value of the variable mapped to this axis of the observation associated with the line.  Both these capabilities were added to aid interpretation of the roles of explanatory variables in a model with these ICE plots.
+
+### load the input data
+
+```{r}
+load('~/rwa/party_data/party_tune/cv_initial_workspace/party_cv_input.RData')
+```
+
+### source the plot_ice() funtion
+
+See Appendix for the source code for this function.
+
+```{r}
+source('./functions/plot_ice.R')
+```
+
+### ICE plots of the 6 explanatory variable with the highest conditional variable importance scores:
+ 1. Clim.Terr.C62
+ 2. NFI.S1.C2
+ 3. Clim.Terr.C69
+ 4. NFI.S1.C13
+ 5. Clim.Terr.C64
+ 6. Clim.Terr.C25
+
+### 1) Clim.Terr.C62
+
+```{r, fig.width = 12, fig.height = 12}
+load('~/rwa/party_data/ice/objects/ice_obj/ct_c62/ice.ct.c62.200p.RData')
+
+ct.c62.ice.p <- plot_ice(ice.obj = ice.ct.c62.200p,
+                         alpha.dist.to.obs.power = 12,
+                         alpha.scale.range = c(0,0.05),
+                         center.curves = TRUE,
+                         centered.quantile = 0.01,
+                         plot.pd.curve = FALSE,
+                         y.axis.title = 'Centered Predicted Probability of Ant Mound Occurrence'  
+                )
+
+ct.c62.ice.p
+```
+
+### 2) NFI.S1.C2
+
+```{r, fig.width = 12, fig.height = 12}
+load('~/rwa/party_data/ice/objects/ice_obj/nfi_s1_c2/ice.nfi.s1.c2.200p.RData')
+
+nfi.s1.c2.ice.p <- plot_ice(ice.obj = ice.nfi.s1.c2.200p,
+         alpha.dist.to.obs.power = 12,
+         alpha.scale.range = c(0,0.05),
+         center.curves = TRUE,
+         centered.quantile = 0.001,
+         plot.pd.curve = FALSE,
+         y.axis.title = 'Centered Predicted Probability of Ant Mound Occurrence'  
+)
+
+nfi.s1.c2.ice.p
+```
+
+### 3) Clim.Terr.C69
+
+```{r, fig.width = 12, fig.height = 12}
+load('~/rwa/party_data/ice/objects/ice_obj/ct_c69/ice.ct.c69.200p.RData')
+
+ct.c69.ice.p <- plot_ice(ice.obj = ice.ct.c69.200p,
+         alpha.dist.to.obs.power = 12,
+         alpha.scale.range = c(0,0.05),
+         center.curves = TRUE,
+         centered.quantile = 0.01,
+         plot.pd.curve = FALSE,
+         y.axis.title = 'Centered Predicted Probability of Ant Mound Occurrence'  
+)
+
+ct.c69.ice.p
+```
+
+### 4) NFI.S1.C13
+
+```{r, fig.width = 12, fig.height = 12}
+load('~/rwa/party_data/ice/objects/ice_obj/nfi_s1_c13/ice.nfi.s1.c13.200p.RData')
+
+nfi.s1.c13.ice.p <- plot_ice(ice.obj = ice.nfi.s1.c13.200p,
+         alpha.dist.to.obs.power = 12,
+         alpha.scale.range = c(0,0.05),
+         center.curves = TRUE,
+         centered.quantile = 0.01,
+         plot.pd.curve = FALSE,
+         y.axis.title = 'Centered Predicted Probability of Ant Mound Occurrence'  
+)
+
+nfi.s1.c13.ice.p
+```
+
+### 5) Clim.Terr.C64
+
+```{r, fig.width = 12, fig.height = 12}
+load('~/rwa/party_data/ice/objects/ice_obj/ct_c64/ice.ct.c64.200p.RData')
+
+ct.c64.ice.p <- plot_ice(ice.obj = ice.ct.c64.200p,
+         alpha.dist.to.obs.power = 12,
+         alpha.scale.range = c(0,0.05),
+         center.curves = TRUE,
+         centered.quantile = 0.01,
+         plot.pd.curve = FALSE,
+         y.axis.title = 'Centered Predicted Probability of Ant Mound Occurrence'  
+)
+
+ct.c64.ice.p
+```
+
+looks like there could be two groups of curves in this plot...
+
+```{r, fig.width = 12, fig.height = 6}
+ct.c64.int.ct.c62.ice.p <- plot_ice(ice.obj = ice.ct.c64.200p,
+         alpha.dist.to.obs.power = 12,
+         alpha.scale.range = c(0,0.05),
+         facet.cols.by = 'Clim.Terr.C62',
+         facet.cols.threshold = quantile(x = Data.Y.X.ID.tb$Clim.Terr.C62, probs = 0.6) %>% as.numeric() %>% round(2),
+         center.curves = TRUE,
+         centered.quantile = 0.01,
+         plot.pd.curve = FALSE,
+         y.axis.title = 'Centered Predicted Probability of Ant Mound Occurrence'  
+)
+
+ct.c64.int.ct.c62.ice.p
+```
+
+### 6) Clim.Terr.C25
+
+```{r, fig.width = 12, fig.height = 12}
+load('~/rwa/party_data/ice/objects/ice_obj/ct_c25/ice.ct.c25.200p.RData')
+
+ct.c25.ice.p <- plot_ice(ice.obj = ice.ct.c25.200p,
+         alpha.dist.to.obs.power = 12,
+         alpha.scale.range = c(0,0.05),
+         center.curves = TRUE,
+         centered.quantile = 0.01,
+         plot.pd.curve = FALSE,
+         y.axis.title = 'Centered Predicted Probability of Ant Mound Occurrence'  
+)
+
+ct.c25.ice.p
+```
+
+this is another plot where it appears that there could be two groups of curves
+
+```{r, fig.width = 12, fig.height = 6}
+ct.c25.int.ct.c62.ice.p <- plot_ice(ice.obj = ice.ct.c25.200p,
+         alpha.dist.to.obs.power = 12,
+         alpha.scale.range = c(0,0.05),
+         facet.cols.by = 'Clim.Terr.C62',
+         facet.cols.threshold = quantile(x = Data.Y.X.ID.tb$Clim.Terr.C62, probs = 0.6) %>% as.numeric() %>% round(2),
+         center.curves = TRUE,
+         centered.quantile = 0.01,
+         plot.pd.curve = FALSE,
+         y.axis.title = 'Centered Predicted Probability of Ant Mound Occurrence'  
+)
+
+ct.c25.int.ct.c62.ice.p
+```
+
+## Investigations to Aid Interpretation of the Some of the Most Important Explanatory Variables
+
+### Correlation Matrix of Six Most Important Variables
+
+```{r, fig.width = 10, fig.height = 9}
+select(Data.Y.X.ID.tb, Clim.Terr.C62, NFI.S1.C2, Clim.Terr.C69, NFI.S1.C13, Clim.Terr.C64, Clim.Terr.C25) %>%
+  cor() %>% heatmaply(colors = PRGn, limits = c(-1,1), margins = c(120,120),
+                      column_text_angle = 90, fontsize_row = 12, fontsize_col = 12,
+                      draw_cellnote = TRUE, cellnote_size = 14)
+```
+
+### Were Martijn's elevation and conifer data highly correlated?
+
+```{r}
+load('~/rwa/data/Vandegehuchte_et_al_Data/Ants LFI published.Rdata')
+```
+
+Elevation = dhm25_l2
+```{r}
+ggplot(data = Xfull, aes(dhm25_l2, PRCT_CONIF)) +
+  geom_point()
+```
+
+```{r}
+cor(Xfull$dhm25_l2, Xfull$PRCT_CONIF, use = 'pairwise.complete')
+```
+
+So no, these variables were not particularly correlated.
+
+What was strongly correlated with elevation in Martijn's data:
+
+```{r}
+load('~/Downloads/Ants LFI published.Rdata')
+
+cor(Xfull$dhm25_l2, Xfull, use = 'pairwise.complete') %>%
+  t() %>%
+    tibble(Name = rownames(.), Value = .[,1]) %>%
+      mutate(Abs.value = abs(Value)) %>%
+        arrange(desc(Abs.value))
+```
+
+### Temperatures in the Driest Months of the Year
+
+```{r}
+load( '~/rwa/data/processed_climate/intermediate_workspaces/clim.1999.2016.tb')
+
+head(clim.1999.2016.tb)
+```
+
+#### Driest quarter
+
+```{r, fig.width = 12, fig.height = 12}
+ww <- 91
+
+dq.step.1 <- mutate(clim.1999.2016.tb, Year = lubridate::year(Date.ymd)) %>%
+  group_by(CLNR, Year) %>%
+    mutate(Day.of.Year = lubridate::yday(Date.ymd)) %>%
+      arrange(Day.of.Year) %>%
+        mutate(prcp.rqs = c(rep(NA,(ww-1)/2), RcppRoll::roll_sum(x = prcp, n = ww), rep(NA,(ww-1)/2)), # rolling quarterly sum
+               driest.qrtr.cntr = ifelse(prcp.rqs == min(prcp.rqs, na.rm = TRUE), TRUE, FALSE)  # logical: central day of driest quarter 
+              ) %>%
+          ungroup()
+
+dq.step.2 <- filter(dq.step.1, driest.qrtr.cntr == TRUE) %>%
+  select(CLNR, Year, Day.of.Year, driest.qrtr.cntr) %>%
+    rename(DQC.DOY = Day.of.Year)
+
+
+mutate(dq.step.2,
+       DQS.DOY = DQC.DOY - 45, # Driest Quarter Start Day Of the Year
+       DQE.DOY = DQC.DOY + 45 # Driest Quarter End Day Of the Year
+      ) %>%
+  select(DQS.DOY,
+         DQE.DOY) %>%
+    summary()
+
+mutate(dq.step.2,
+       DQS.DOY = DQC.DOY - 45, # Driest Quarter Start Day Of the Year
+       DQE.DOY = DQC.DOY + 45 # Driest Quarter End Day Of the Year
+      ) %>%
+  mutate(index = 1:nrow(dq.step.2)) %>%
+    ggplot(aes(x = DQS.DOY, xend = DQE.DOY, y = index, yend = index)) +
+      geom_segment() +
+        labs(x = 'Day of Year', y = 'NFI Plot ID')
+```
+
+Thus at the majority of plots the driest quarter of the year was at either the start of the end of the year.
+
+```{r}
+ten.yr.means.of.dq.ss.tb <- left_join(dq.step.1, dq.step.2, by = c('CLNR', 'Year')) %>% # driest quarter summary statistics
+  mutate(Day.Diff = DQC.DOY - Day.of.Year) %>%
+    filter(Day.Diff %in% (-(ww-1)/2):((ww-1)/2)) %>%
+      group_by(CLNR) %>%
+        summarise(clim09.10yr.mean = mean(tave),
+                  clim17.10yr.mean = sum(prcp),
+                  clim25.10yr.mean = mean(srad)
+                 )
+
+summary(ten.yr.means.of.dq.ss.tb$clim09.10yr.mean)
+```
+
+Furthermore the driest quarter of the year at most plots was also a relatively cold time falling as it typically did during winter months.
+
+#### Elevation distributions of Species
+
+Load the Digital Elevation Model derived variables
+
+```{r}
+load('~/rwa/data/dtm_buffer_summaries/Prepared_DTM_Buffer_Summaries/dem.bs.tb.RData')
+```
+
+Extract the mean elevations of the DEM pixels in the 12.5m disk buffers centered on each plot.
+
+```{r}
+plot.mean.elevation.tb <- select(dem.bs.tb, CLNR, dem_5m_clip_master_mean_12m)
+```
+
+Load the Prepared Red Wood Ant Species Occurrence Data
+```{r, fig.width = 12, fig.height = 12}
+load('~/rwa/data/ants/Preparations_of_Ameisen_Data_2009-2017_pourWSL_22.03.2018_xlsx/wood.ant.species.presence.absence.tb.RData')
+```
+
+Plot the distribution of elevations at which each species was observed:
+```{r}
+rwa.sp.elev.tb <- gather(wood.ant.species.presence.absence.tb, -CLNR, -Year, key = 'Species', value = 'Presence') %>%
+  filter(Presence == 1) %>%
+    left_join(y = plot.mean.elevation.tb, by = 'CLNR') %>%
+      mutate(Species.Name = case_when(
+                              Species == "Formica aquilonia_Binary.PA"    ~ 'F. aquilonia',
+                              Species == "Formica lugubris_Binary.PA"     ~ 'F. lugubris',
+                              Species == "Formica paralugubris_Binary.PA" ~ 'F. paralugubris',
+                              Species == "Formica polyctena_Binary.PA"    ~ 'F. polyctena',
+                              Species == "Formica pratensis_Binary.PA"    ~ 'F. pratensis',
+                              Species == "Formica rufa_Binary.PA"         ~ 'F. rufa'
+                            )
+      )
+
+rwa.sp.elev.p <- ggplot(data = rwa.sp.elev.tb, aes(x = dem_5m_clip_master_mean_12m)) +
+  geom_histogram(binwidth = 100, boundary = 100, colour = 'black', fill = 'grey') + 
+  facet_grid(Species.Name~.) +
+  labs(x = 'Elevation (m)', y = 'Frequency') +
+  theme_bw()
+
+rwa.sp.elev.p
+```
+
+Plot the distribution of elevations of all NFI plots:
+```{r, fig.width = 12, fig.height = 12}
+nfi.plot.elev.p <- ggplot(data = plot.mean.elevation.tb, aes(x = dem_5m_clip_master_mean_12m)) +
+  geom_histogram(binwidth = 100, boundary = 100, colour = 'black', fill = 'grey') +
+  theme_bw() +
+  labs(x = 'Elevation (m)', y = 'Frequency')
+
+nfi.plot.elev.p
+```
+
+### Correlation of NFI.S1.C13 with Measurements of Direct Human Disturbance (`NFI.S2.*`)
+
+```{r, fig.width = 10, fig.height = 9}
+select(Data.Y.X.ID.tb, NFI.S1.C13, contains('NFI.S2')) %>%
+  cor() %>% 
+    heatmaply(colors = PRGn, limits = c(-1,1), margins = c(120,120),
+              column_text_angle = 90, fontsize_row = 12, fontsize_col = 12,
+              draw_cellnote = TRUE, cellnote_size = 14)
+```
+
+### Correlation of NFI.S1.C13 with Characteristics of the Forest not Related to Direct Human Disturbance (`NFI.S1.*`)
+
+```{r, fig.width = 10, fig.height = 9}
+Cor.with.NFI.S1.C13 <- cor(x = pull(Data.Y.X.ID.tb, NFI.S1.C13), 
+                           y = select(Data.Y.X.ID.tb, contains('NFI.S1')) %>%
+                                 select(-NFI.S1.C13)) %>%
+                         t() %>% 
+                           as_tibble(rownames = 'Variable') %>%
+                             rename(Cor.with.NFI.S1.C13 = V1) %>%
+                               arrange(desc(Cor.with.NFI.S1.C13)) 
+
+mutate(Cor.with.NFI.S1.C13, Variable.ro = fct_relevel(Variable, Variable)) %>%
+  ggplot(aes(x = Variable.ro, y = Cor.with.NFI.S1.C13)) + 
+    geom_col() +
+    theme_bw() + 
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+      labs(x = 'Variable', y = 'Correlation with NFI.S1.C13') 
+```
+
+```{r}
+filter(Cor.with.NFI.S1.C13, abs(Cor.with.NFI.S1.C13) > 0.3) %>% 
+  knitr::kable()
+```
+
+NFI.S1.C5 is a metric of the amount of live European Beech (`Fagus sylvatica`) in a plot.
+
+NFI.S1.C35 = Low values of the NFI.S1.C35 correspond to plots that experienced disturbance due to snowpack movements or avalanches (or both perhaps). High values of the NFI.S1.C35 correspond to plots that lacked either or both of these sorts of disturbance.
+
+### With which of our explanatory variables is NFI.S1.C13 most correlated?
+
+
+```{r, fig.width = 10, fig.height = 9}
+All.Cor.with.NFI.S1.C13 <- cor(x = pull(Data.Y.X.ID.tb, NFI.S1.C13), 
+                               y = select(Data.Y.X.ID.tb, -CLNR, -RWAM) %>%
+                                     select(-NFI.S1.C13)) %>%
+                         t() %>% 
+                           as_tibble(rownames = 'Variable') %>%
+                             rename(Cor.with.NFI.S1.C13 = V1) %>%
+                               arrange(desc(Cor.with.NFI.S1.C13)) 
+
+mutate(All.Cor.with.NFI.S1.C13, Variable.ro = fct_relevel(Variable, Variable)) %>%
+  filter(abs(Cor.with.NFI.S1.C13) > 0.3) %>% 
+    ggplot(aes(x = Variable.ro, y = Cor.with.NFI.S1.C13)) + 
+      geom_col() +
+      theme_bw() + 
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+      labs(x = 'Variable', y = 'Correlation with NFI.S1.C13') +
+      ylim(-0.6, 0.6)
+```
+
+# Appendix
+
+```{r code = readLines('~/rwap/functions/plot_ice.R'), echo = TRUE, eval = FALSE}
+```
+
+

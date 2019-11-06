@@ -1,0 +1,1745 @@
+---
+title: "S3 Preparation of National Forestry Inventory Interviews Data"
+author: "Author Blank for Double Blind Peer Review"
+output: html_notebook
+---
+
+## Introduction
+
+In this file I prepare the data collected from the interviews with foresters conducted by the NFI between 2009 and 2017.
+
+## Loading the packages I will use:
+
+```{r message=FALSE, warning=FALSE}
+library(readxl)
+library(plotly)
+library(visdat)
+library(tidyverse)
+```
+
+## Reading in the Data:
+
+The plots that were searched for ant mounds:
+```{r}
+CLNR.SFAM.tb <- read_excel(path = '../rwa/data/NFI/Daten/Plotdaten_2009-2017_Rohdaten.xlsx', sheet = 'SQL Results') %>%
+  filter(AMHAUSST == 1) %>%
+    select(CLNR, AMHAUSST)
+```
+
+The reading in the data from the NFI interviews and subsetting it to the observations of plots (CLNR) that were searched for ant mounds.
+I also read in some of the field data which I use in this data preparation for comparison purposes.
+
+```{r}
+raw.int.tb <- read_excel(path = '../rwa/data/NFI/Daten/Umfragedaten 2009-2017_Rohdaten.xlsx', sheet = 'SQL Results') %>%
+  right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
+    select(-AMHAUSST, -`...1`)
+```
+
+```{r}
+der.int.tb <- read_excel(path = '../rwa/data/NFI/Daten/Plotdaten_2009-2017_abgeleitete Daten_Nachtrag.xls', sheet = 'SQL Results') %>%
+  right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
+    select(-AMHAUSST, -`...1`)
+```
+
+```{r}
+plotdaten.tb <- read_excel(path = '../rwa/data/NFI/Daten/Plotdaten und Baumdaten_2009-2017_abgeleitete Daten (Version 31.05.2018).xlsx', sheet = 'Plotdaten') %>%
+  right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
+    select(-AMHAUSST, -`...1`)
+```
+
+```{r}
+EINGARTUMF.tb <- read_excel(path = '../rwa/data/NFI/Datenlieferung_Ben_21.08.2018/Waldbauliche_Eingriffe_1996_2017.xlsx') %>%
+  right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
+    select(-AMHAUSST, -`...1`)
+```
+
+```{r}
+FLSCHUMF.tb <- read_excel(path = '../rwa/data/NFI/Datenlieferung_Ben_21.08.2018/Plotdaten_2009-2017_abgeleitete Daten_Nachtrag_10.09.2018.xlsx') %>%
+  right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
+    select(-AMHAUSST, -`...1`)
+```
+
+```{r}
+baumdaten.tb <- read_excel(path = '../rwa/data/NFI/Daten/Plotdaten und Baumdaten_2009-2017_abgeleitete Daten (Version 31.05.2018).xlsx', sheet = 'Baumdaten') %>%
+  right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
+    select(-AMHAUSST, -`...1`)
+
+raw.plot.tb <- read_excel(path = '../rwa/data/NFI/Daten/Plotdaten_2009-2017_Rohdaten.xlsx', sheet = 'SQL Results') %>%
+ select(-`...1`)
+
+RPA.raw.plot.tb <- filter(raw.plot.tb, AMHAUSST ==  1)
+
+derived.plot.tb <- read_excel(path = '../rwa/data/NFI/Daten/Plotdaten und Baumdaten_2009-2017_abgeleitete Daten (Version 31.05.2018).xlsx', sheet = 'Plotdaten') %>%
+  right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
+    select(-AMHAUSST, -`...1`)
+
+WRPA.derived.plot.tb <- select(RPA.raw.plot.tb, CLNR) %>%
+  left_join(., derived.plot.tb, by = 'CLNR')
+```
+
+Reading in some Additional Data:
+```{r}
+Add.Plot.Data.LFI4.tb <- read_excel(path = '../rwa/data/NFI/Daten/Missing data_03.10.2018.xlsx', sheet = 'Plotdaten_LFI4') %>%
+  right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
+    select(-AMHAUSST, -`...1`)
+
+Add.Plot.Data.LFI3.tb <- read_excel(path = '../rwa/data/NFI/Daten/Missing data_03.10.2018.xlsx', sheet = 'Plotdaten_LFI3') %>%
+  right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
+    select(-AMHAUSST, -`...1`)
+
+HaBaGesVerj_LFI4.tb <- read_excel(path = '../rwa/data/NFI/Daten/Missing data_03.10.2018.xlsx', sheet = 'HaBaGesVerj_LFI4') %>%
+  right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
+    select(-AMHAUSST, -`...1`)
+
+Schichtdeckungsgrade.tb <- read_excel(path = '../rwa/data/NFI/Daten/Missing data_03.10.2018.xlsx', sheet = 'Schichtdeckungsgrade') %>%
+  right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
+    select(-AMHAUSST, -`...1`)
+```
+
+## Extraction and Preparation of Selected Variables
+
+Anita and I read through the NFI Field Manual and selected a set of variables from the NFI Interviews Data that we think have the potential to be relevant to the distributions of ant mounds.
+I extract and prepare each of these variables in turn below.
+
+### MID 326 = ERSKONZ = Access Concept
+
+This variable quantifies the level of transport access of the forest in which the NFI plots are situated.
+     
+```{r}
+tribble(~Code, ~Name, ~Description,
+  1, 'Skidding track', 'Roads and skidding tracks',
+  2, 'Skidding road', 'Roads and skidding roads',
+  3, 'Cable crane', 'Roads and cable lines',
+  4, 'Helicopter', 'Roads and flight paths',
+  5, 'No access', 'No forest access infrastructure'
+) %>%
+  knitr::kable()
+```
+
+`ERSKONZ` is present in three of the data files provided:
+```{r}
+'ERSKONZ' %in% colnames(raw.int.tb)
+```
+
+```{r}
+'ERSKONZ' %in% colnames(der.int.tb)
+```
+
+```{r}
+'ERSKONZ' %in% colnames(plotdaten.tb)
+```
+
+Consequently it is important to check that these three data files contain the same values for `ERSKONZ`.
+
+```{r}
+check.1 <- select(raw.int.tb, CLNR, ERSKONZ) %>%
+  arrange(CLNR)
+
+check.2 <- select(der.int.tb, CLNR, ERSKONZ) %>%
+  arrange(CLNR)
+
+check.3 <- select(plotdaten.tb, CLNR, ERSKONZ) %>%
+  arrange(CLNR)
+```
+
+First check:
+```{r}
+ifelse(test = identical(check.1, check.2), yes = 'check passed', no = 'check failed')
+```
+
+Second check:
+```{r}
+ifelse(test = identical(check.2, check.3), yes = 'check passed', no = 'check failed')
+```
+
+Third check:
+```{r}
+ifelse(test = identical(check.1, check.3), yes = 'check passed', no = 'check failed')
+```
+
+Thus the `CLNR` values common to these three data sets are all associated with the same `ERSKONZ` values.
+
+```{r}
+ERSKONZ.tb <- select(raw.int.tb, CLNR, ERSKONZ) %>%
+  mutate(ERSKONZ.TXT = case_when(
+                         ERSKONZ == 1 ~ 'Skidding track',
+                         ERSKONZ == 2 ~ 'Skidding road',
+                         ERSKONZ == 3 ~ 'Cable crane',
+                         ERSKONZ == 4 ~ 'Helicopter',
+                         ERSKONZ == 5 ~ 'No access'
+                       )
+  )
+
+ERSKONZ.tb <- select(ERSKONZ.tb, CLNR, ERSKONZ.TXT)
+
+group_by(ERSKONZ.tb, ERSKONZ.TXT) %>%
+  count() %>%
+    knitr::kable()
+```
+
+### MID 328 = WAFKTVOR4 = Primary forest function 12 classes from LFI 4
+
+```{r}
+'WAFKTVOR4' %in% colnames(Add.Plot.Data.LFI4.tb)
+```
+
+| WAFKTVOR | Category | Description |
+|----------|----------|-------------|
+| -1       | Missing Data | Missing Data |
+|  1       | No primary function     | No primary forest function, as there are no special functions but only general forest functions. |
+|  2       | Wood production         | Wood production. |
+|  3       | Agricultural use        | Agricultural use (wooded pasture, selvas). |
+|  4       | Windbreak               | Usually protection of agricultural areas against wind. |
+|  5       | Drinking water prot.    | Drinking water protection. |
+|  6       | Protection forest BSF   | Protection against natural hazards (avalanches, rockfall, landslide, erosion, mudflow, floods) within the BSF-perimeter. |
+|  7       | Spec. protection forest | Protection against natural hazards (avalanches, rockfall, landslide, erosion, mudflow, floods) outside the BSF-perimeter. |
+|  8       |  Nature reserve         | Reserves, nature reserve (protection of biotopes and species), rare and special forest stands with specific measures (protection, tending, stimulation of biodiversity), protected objects. |
+|  9       | Landscape protection    | Landscape protection. |
+| 10       | Game reserve            | Game reserve, resting place for game. |
+| 11       | Recreation              | Recreation, sports. |
+| 12       | Military                | Military training areas. |
+| 13       | Protection forest       | Protection against natural hazards |
+
+Note categories 6 & 7 have been retired and replaced with the single category 13.
+
+```{r}
+group_by(Add.Plot.Data.LFI4.tb, WAFKTVOR4) %>%
+  count() %>%
+    knitr::kable()
+```
+
+```{r}
+pull(Add.Plot.Data.LFI4.tb, WAFKTVOR4) %>%
+  unique() %>%
+    sort()
+```
+
+Aggregate the levels of WAFKTVOR4 into new categories that we think would involve similar levels of habitat disturbance to the ants.
+We seek to combine rare categories with other categories so that the resulting set of categories does not include any categories with less than 100 observations.
+
+```{r}
+WAFKTVOR4.tb <- select(Add.Plot.Data.LFI4.tb, CLNR, WAFKTVOR4) %>%
+  mutate(WAFKTVOR4.Agg.Cat = case_when(
+    WAFKTVOR4 == -1  ~ 'Unknown',
+    WAFKTVOR4 ==  1  ~ 'No primary function',
+    WAFKTVOR4 ==  2  ~ 'Wood production',
+    WAFKTVOR4 ==  3  ~ 'Agricultural use',
+    WAFKTVOR4 ==  6  ~ 'Protection forest BSF',
+    WAFKTVOR4 ==  9 | WAFKTVOR4 ==  5 ~ 'Landscape protection or Drinking water protection',
+    WAFKTVOR4 ==  8 | WAFKTVOR4 == 10 ~ 'Nature reserve or Game reserve',
+    WAFKTVOR4 == 11 | WAFKTVOR4 == 12  ~ 'Recreation or Military',
+    WAFKTVOR4 == 13 ~ 'Protection Forest'    
+    )
+  )
+
+group_by(WAFKTVOR4.tb, WAFKTVOR4.Agg.Cat) %>%
+  summarise(N = n()) %>%
+    arrange(N) %>%
+      knitr::kable()
+```
+
+```{r}
+WAFKTVOR4.tb <- select(WAFKTVOR4.tb, CLNR, WAFKTVOR4.Agg.Cat)
+```
+
+### MID 329 = ERHNUTSUMF = Type of current recreational use
+
+The indicator variables for each of the levels `ERHNUTSUMF` are present in data as separate columns.
+
+These indicator variables use the following coding scheme:
+```{r}
+tribble(~Code, ~Meaning,
+-1, 'Missing Data',
+ 1, 'Present',
+ 2, 'Absent') %>%
+  knitr::kable()
+```
+
+| Excel Sheet Column Name  | NAFIDAS Entry                                    | DeepL Translation of NAFIDAS Entry                             | MID 329 Description (Christoph has Checked)                                                | MID 329 Code (Christoph has Checked) |
+|--------------|--------------------------------------------------|----------------------------------------------------------------|-----------------------------------------------------------------------------|----------------------|
+| ERHASPAZ     | Erholungsart Spazieren                           | Relaxation Walking                                             |  Walking.                                                                   |  1                   |
+| ERHAWANDER   | Erholungsart Wandern                             | Hiking as a form of recreation                                 |  Hiking (including transport facilities).                                   |  2                   |
+| ERHAJOGG     | Erholungsart Joggen                              | Recreation type jogging                                        |  Jogging, running.                                                          |  3                   |
+| ERHARADFA    | Erholungsart Radfahren                           | Recreation type cycling                                        |  Cycling, touring with bicycles.                                            |  4                   |
+| ERHABIKEN    | Erholungsart Biken                               | Recreation type biking                                         |  Mountain biking, cross-country biking.                                     |  5                   |
+| ERHASKIBORD  | Erholungsart Ski und Snowboard                   | Recreation type ski and snowboard                              |  Skiing and snowboarding (including transport facilities).                  |  6                   |
+| ERHASKILANG  | Erholungsart Ski-Langlauf                        | Recreation type cross-country skiing                           |  Cross-country skiing.                                                      |  7                   |
+| ERHASCHNEEWA | Erholungsart Schneeschuh-Wandern                 | Recreation type snowshoe hiking                                |  Snowshoe hiking.                                                           |  8                   |
+| ERHAREITEN   | Erholungsart Reiten                              | Horse riding recreation                                        |  Horse-riding.                                                              |  9                   |
+| ERHALAGERN   | Erholungsart Lagern                              | Recreation type camping                                        |  Picnic, open-air party (including cabins), camping.                        | 10                   |
+| ERHAANDERE   | Erholungsart andere Aktivitäten                  | Type of recreation other activities                            |  Other activities (e.g. mushroom-picking, orienteering, mountain climbing). | 11                   |
+
+Check that all of these indicator variables are present in the data:
+```{r}
+c('ERHASPAZ',
+ 'ERHAWANDER',
+ 'ERHAJOGG',
+ 'ERHARADFA',
+ 'ERHABIKEN',
+ 'ERHASKIBORD',
+ 'ERHASKILANG',
+ 'ERHASCHNEEWA',
+ 'ERHAREITEN',
+ 'ERHALAGERN',
+ 'ERHAANDERE') %in% colnames(plotdaten.tb) %>%
+  summary()
+```
+
+View the number of presences (values of `1`) and absences (values of `2`) in each of these variables:
+```{r}
+select(plotdaten.tb,
+ ERHASPAZ,
+ ERHAWANDER,
+ ERHAJOGG,
+ ERHARADFA,
+ ERHABIKEN,
+ ERHASKIBORD,
+ ERHASKILANG,
+ ERHASCHNEEWA,
+ ERHAREITEN,
+ ERHALAGERN,
+ ERHAANDERE) %>%
+  mutate_all(factor) %>%
+    summary()  
+```
+
+A single CLNR can have multiple types of recreation use.
+Consequently I keep each of these columns separate:
+
+```{r}
+ERHNUTSUMF.tb <- select(Add.Plot.Data.LFI4.tb,
+ CLNR,                        
+ ERHASPAZ,
+ ERHAWANDER,
+ ERHAJOGG,
+ ERHARADFA,
+ ERHABIKEN,
+ ERHASKIBORD,
+ ERHASKILANG,
+ ERHASCHNEEWA,
+ ERHAREITEN,
+ ERHALAGERN,
+ ERHAANDERE) %>%
+   mutate_at(.vars = vars(matches('^ERHA')),
+             .funs = function(x) { case_when(
+                                     x == -1 ~ 'Missing',
+                                     x ==  1 ~ 'Present',
+                                     x ==  2 ~ 'Absent'
+                                   )
+                     }
+   )
+
+mutate_all(ERHNUTSUMF.tb, factor) %>%
+  summary()
+```
+
+```{r}
+rename_at(.tbl = ERHNUTSUMF.tb, .vars = vars(matches('^ERH')), .funs = function(x){paste0(x, '.ERHNUTSUMF')}) %>%
+  colnames()
+```
+
+```{r}
+ERHNUTSUMF.tb <- rename_at(.tbl = ERHNUTSUMF.tb, .vars = vars(matches('^ERH')), .funs = function(x){paste0(x, '.ERHNUTSUMF')})
+```
+
+### MID 330 = ERHNUTINTUMF = Intensity of current recreational use (code)
+
+The levels of `ERHNUTINTUMF` correspond to numeric intervals describing the estimated number of visitors per year.
+Here I create a new variable numeric variable from the midpoints of the intervals each of these categories describe (see NFI Field manual).
+
+```{r}
+ERHNUTINTUMF.tb <- mutate(der.int.tb,
+                     ERHNUTINTUMF.cat = case_when(
+                       ERHNUTINTUMF == 1 ~ 'None',
+                       ERHNUTINTUMF == 2 ~ 'Very low',
+                       ERHNUTINTUMF == 3 ~ 'Low',
+                       ERHNUTINTUMF == 4 ~ 'Moderate',
+                       ERHNUTINTUMF == 5 ~ 'High',
+                       ERHNUTINTUMF == 6 ~ 'Very high'
+                     ),
+                     ERHNUTINTUMF.num = case_when(
+                       ERHNUTINTUMF == 1 ~ 5/365,
+                       ERHNUTINTUMF == 2 ~ 0.5,
+                       ERHNUTINTUMF == 3 ~ 5,
+                       ERHNUTINTUMF == 4 ~ (11+89/2),
+                       ERHNUTINTUMF == 5 ~ (101+399/2),
+                       ERHNUTINTUMF == 6 ~ 750
+                     )       
+                   ) %>%
+                     select(CLNR, ERHNUTINTUMF.num)  
+```
+
+```{r, message = FALSE, warning = FALSE}
+ggplot(data = ERHNUTINTUMF.tb, aes(x = ERHNUTINTUMF.num)) +
+  geom_histogram(fill = 'grey', colour = 'black') +
+    theme_bw()
+```
+
+```{r, message = FALSE, warning = FALSE}
+ggplot(data = ERHNUTINTUMF.tb, aes(x = ERHNUTINTUMF.num)) +
+  geom_histogram(fill = 'grey', colour = 'black') +
+    xlim(0,60) +
+      theme_bw()
+```
+
+While this would be a very problematic distribution for a numeric explanatory variable in a multiple linear regression model the binary trees of a random forest are estimating split points rather than slope coefficients and as such should not be adversely impacted by this distribution.
+
+## Data on Recreational Use of the Forest from the Field Surveys:
+
+### Status of recreational use, field survey = MID 594 = Status Erholungsnutzung, Feldaufnahme = Status der Erholungsnutzungaufnahme = ERHNUTSS
+
+```{r}
+ERHNUTSST.tb <- select(RPA.raw.plot.tb, CLNR, ERHNUTSST)
+
+group_by(ERHNUTSST.tb, ERHNUTSST) %>%
+  summarise(N.Plots = n()) %>%
+    knitr::kable()
+```
+
+### Intensity of current recreational use, field survey = MID 595 = Intensität der aktuellen Erholungsnutzung, Feldaufnahme = Erholungsnutzungsintensitat = ERHNUTINT
+
+| ERHNUTINT | Category Name |  Meaning |
+|----------:|--------------:|---------:|
+| 1  | None | No current recreational use (< than 10 visitors/year). |
+| 2  | Very Low | < 1 visitor/day. |
+| 3  |  Low | 1–10 visitors/day. |
+| 4  | Moderate | 11–100 visitors/day. |
+| 5  | High | 101–500 visitors/day. |
+| 6  | Very High | > 500 visitors/day. |
+
+Concerting this interval censored data to the numeric mid points of the intervals:
+
+```{r}
+ERHNUTINT.tb <- select(RPA.raw.plot.tb, CLNR, ERHNUTINT, ERHNUTINTTXT) %>%
+  mutate(English = case_when(
+    ERHNUTINT == -1 ~ 'Missing Data',
+    ERHNUTINT ==  1 ~ '<10/year',
+    ERHNUTINT ==  2 ~ '<1/day',
+    ERHNUTINT ==  3 ~ '1–10/day',
+    ERHNUTINT ==  4 ~ '11–100/day',
+    ERHNUTINT ==  5 ~ '101–500/day',
+    ERHNUTINT ==  6 ~ '>500/day'
+    ),
+    ERHNUTINT.Num = case_when(
+    ERHNUTINT == -1 ~ as.numeric(NA),
+    ERHNUTINT ==  1 ~ 5/365,
+    ERHNUTINT ==  2 ~ 0.5,
+    ERHNUTINT ==  3 ~ 5.5,
+    ERHNUTINT ==  4 ~ 55.5,
+    ERHNUTINT ==  5 ~ 300.5,
+    ERHNUTINT ==  6 ~ 500
+  )
+  )
+
+group_by(ERHNUTINT.tb, ERHNUTINT, English, ERHNUTINT.Num) %>%
+  summarise(N.Plots = n()) %>%
+    knitr::kable()
+```
+
+```{r}
+ERHNUTINT.tb <- select(ERHNUTINT.tb, CLNR, ERHNUTINT.Num) %>%
+  rename(ERHNUTINT = ERHNUTINT.Num)
+```
+
+```{r, message = FALSE, warning = FALSE}
+ggplot(data = ERHNUTINT.tb, aes(x = ERHNUTINT)) +
+  geom_histogram(fill = 'grey', colour = 'black') + theme_bw()
+```
+
+```{r}
+group_by(ERHNUTINT.tb, ERHNUTINT) %>%
+  summarise(N = n()) %>%
+    knitr::kable()
+```
+
+Ultimately, MID 330 is considered to be decisive while the corresponding attribute assessed in the field survey (MID 595, ERHNUTINT) is considered auxiliary information.
+For this reason I am choosing to exclude ERHNUTINT and use instead the data on visitor numbers assessed in the NFI Interviews.
+
+### Type of current recreational use, field survey = MID 593 = Art der aktuellen Erholungsnutzung Feldaufnahme = Art der Erholungsnutzung = ERHNUT
+
+MID 593 is spread across 11 columns (each code exists as a separate presence/absence/missing column):
+
+```{r}
+ERHNUT.tb <- select(WRPA.derived.plot.tb, one_of(c('CLNR', 'ERHAANDERE','ERHABIKEN', 'ERHAJOGG', 'ERHALAGERN', 'ERHARADFA', 'ERHAREITEN', 'ERHASCHNEEWA', 'ERHASKIBORD', 'ERHASKILANG', 'ERHASPAZ', 'ERHAWANDER')))
+
+slice(ERHNUT.tb, 1:10) %>%
+  knitr::kable()
+```
+
+```{r}
+select(ERHNUT.tb, -CLNR) %>%
+  unlist() %>%
+    unique()
+```
+
+The standard NFI coding applies here:
+```{r}
+tribble(
+  ~Numeric, ~Text,
+        -1, 'Missing Data',
+         1, 'Present',
+         2, 'Absent'
+) %>%
+  knitr::kable()
+```
+
+```{r}
+ERHNUT.tb <- mutate(ERHNUT.tb,
+		    ERHAANDERE.2 = case_when(ERHAANDERE == -1 ~ as.character(NA),
+                                             ERHAANDERE ==  1 ~ 'Present',		
+                                             ERHAANDERE ==  2 ~ 'Absent'
+                                ),
+		    ERHABIKEN.2 = case_when(ERHABIKEN == -1 ~ as.character(NA),
+                                            ERHABIKEN ==  1 ~ 'Present',
+                                            ERHABIKEN ==  2 ~ 'Absent'
+                               ),
+		    ERHAJOGG.2 = case_when(ERHAJOGG == -1 ~ as.character(NA),
+                                           ERHAJOGG ==  1 ~ 'Present',
+                                           ERHAJOGG ==  2 ~ 'Absent'
+                              ),
+		    ERHALAGERN.2 = case_when(ERHALAGERN == -1 ~ as.character(NA),
+                                             ERHALAGERN ==  1 ~ 'Present',
+                                             ERHALAGERN ==  2 ~ 'Absent'
+                                ),
+		    ERHARADFA.2 = case_when(ERHARADFA == -1 ~ as.character(NA),
+                                            ERHARADFA ==  1 ~ 'Present',
+                                            ERHARADFA ==  2 ~ 'Absent'
+                               ),
+		    ERHAREITEN.2 = case_when(ERHAREITEN == -1 ~ as.character(NA),
+                                             ERHAREITEN ==  1 ~ 'Present',
+                                             ERHAREITEN ==  2 ~ 'Absent'
+                                ),
+		    ERHASCHNEEWA.2 = case_when(ERHASCHNEEWA == -1 ~ as.character(NA),
+                                               ERHASCHNEEWA ==  1 ~ 'Present',
+                                               ERHASCHNEEWA ==  2 ~ 'Absent'
+                                   ),
+		    ERHASKIBORD.2 = case_when(ERHASKIBORD == -1 ~ as.character(NA),
+                                              ERHASKIBORD ==  1 ~ 'Present',
+                                              ERHASKIBORD ==  2 ~ 'Absent'
+                                  ),
+		    ERHASKILANG.2 = case_when(ERHASKILANG == -1 ~ as.character(NA),
+                                              ERHASKILANG ==  1 ~ 'Present',
+                                              ERHASKILANG ==  2 ~ 'Absent'
+                                 ),
+		    ERHASPAZ.2 = case_when(ERHASPAZ == -1 ~ as.character(NA),
+                                           ERHASPAZ ==  1 ~ 'Present',
+                                           ERHASPAZ ==  2 ~ 'Absent'
+                              ),
+		    ERHAWANDER.2 = case_when(ERHAWANDER == -1 ~ as.character(NA),
+                                             ERHAWANDER ==  1 ~ 'Present',
+                                             ERHAWANDER ==  2 ~ 'Absent'
+                                )
+)
+```
+
+check:
+```{r}
+group_by(ERHNUT.tb, ERHAANDERE.2, ERHAANDERE) %>%
+  summarise(N = n()) %>% knitr::kable()
+```
+
+```{r}
+ERHNUT.tb <- select(ERHNUT.tb, -ERHAANDERE) %>%
+  rename(ERHAANDERE = ERHAANDERE.2)
+```
+
+
+```{r}
+group_by(ERHNUT.tb, ERHABIKEN.2, ERHABIKEN) %>%
+  summarise(N = n()) %>% knitr::kable()
+```
+
+```{r}
+ERHNUT.tb <- select(ERHNUT.tb, -ERHABIKEN) %>%
+  rename(ERHABIKEN = ERHABIKEN.2)
+```
+
+
+```{r}
+group_by(ERHNUT.tb, ERHAJOGG.2, ERHAJOGG) %>%
+  summarise(N = n()) %>% knitr::kable()
+```
+
+```{r}
+ERHNUT.tb <- select(ERHNUT.tb, -ERHAJOGG) %>%
+  rename(ERHAJOGG = ERHAJOGG.2)
+```
+
+
+```{r}
+group_by(ERHNUT.tb, ERHALAGERN.2, ERHALAGERN) %>%
+  summarise(N = n()) %>% knitr::kable()
+```
+
+```{r}
+ERHNUT.tb <- select(ERHNUT.tb, -ERHALAGERN) %>%
+  rename(ERHALAGERN = ERHALAGERN.2)
+```
+
+```{r}
+group_by(ERHNUT.tb, ERHARADFA.2, ERHARADFA) %>%
+  summarise(N = n()) %>% knitr::kable()
+```
+
+```{r}
+ERHNUT.tb <- select(ERHNUT.tb, -ERHARADFA) %>%
+  rename(ERHARADFA = ERHARADFA.2)
+```
+
+```{r}
+group_by(ERHNUT.tb, ERHAREITEN.2, ERHAREITEN) %>%
+  summarise(N = n()) %>% knitr::kable()
+```
+
+```{r}
+ERHNUT.tb <- select(ERHNUT.tb, -ERHAREITEN) %>%
+  rename(ERHAREITEN = ERHAREITEN.2)
+```
+
+```{r}
+group_by(ERHNUT.tb, ERHASCHNEEWA.2, ERHASCHNEEWA) %>%
+  summarise(N = n()) %>% knitr::kable()
+```
+
+```{r}
+ERHNUT.tb <- select(ERHNUT.tb, -ERHASCHNEEWA) %>%
+  rename(ERHASCHNEEWA = ERHASCHNEEWA.2)
+```
+
+
+```{r}
+group_by(ERHNUT.tb, ERHASKIBORD.2, ERHASKIBORD) %>%
+  summarise(N = n()) %>% knitr::kable()
+```
+
+```{r}
+ERHNUT.tb <- select(ERHNUT.tb, -ERHASKIBORD) %>%
+  rename(ERHASKIBORD = ERHASKIBORD.2)
+```
+
+```{r}
+group_by(ERHNUT.tb, ERHASKILANG.2, ERHASKILANG) %>%
+  summarise(N = n()) %>% knitr::kable()
+```
+
+```{r}
+ERHNUT.tb <- select(ERHNUT.tb, -ERHASKILANG) %>%
+  rename(ERHASKILANG = ERHASKILANG.2)
+```
+
+
+```{r}
+group_by(ERHNUT.tb, ERHASPAZ.2, ERHASPAZ) %>%
+  summarise(N = n()) %>% knitr::kable()
+```
+
+```{r}
+ERHNUT.tb <- select(ERHNUT.tb, -ERHASPAZ) %>%
+  rename(ERHASPAZ = ERHASPAZ.2)
+```
+
+```{r}
+group_by(ERHNUT.tb, ERHAWANDER.2, ERHAWANDER) %>%
+  summarise(N = n()) %>% knitr::kable()
+```
+
+```{r}
+ERHNUT.tb <- select(ERHNUT.tb, -ERHAWANDER) %>%
+  rename(ERHAWANDER = ERHAWANDER.2)
+```
+
+```{r}
+slice(ERHNUT.tb, 1:10) %>%
+  knitr::kable()
+```
+
+```{r}
+colnames(ERHNUT.tb)
+```
+
+Check for missing values:
+```{r}
+anyNA(ERHNUT.tb)
+```
+
+```{r}
+rename_at(.tbl = ERHNUT.tb, .vars = vars(matches('^ERH')), .funs = function(x){paste0(x, '.ERHNUT')}) %>%
+  colnames()
+```
+
+```{r}
+ERHNUT.tb <- rename_at(.tbl = ERHNUT.tb, .vars = vars(matches('^ERH')), .funs = function(x){paste0(x, '.ERHNUT')}) 
+```
+
+## Further Interviews Derived Data:
+
+### MID 331 = WALDENTUMF = Type of forest origin
+
+When it is unclear whether an area of forest has regrown after being cleared in recent centuries or whether this area of forest has never been cleared the code `unknown` is used for the `WALDENTUMF` entry.
+
+```{r}
+tribble(~Code, ~Name, ~Description,
+1, 'Forest', 'Always forest',
+2, 'Natural', 'Natural reforestation',
+3, 'Artificial', 'Artificial reforestation (afforestation)',
+4, 'Mixed', 'Mixed reforestation',
+5, 'Unknown', 'Unknown') %>%
+  knitr::kable()
+```
+
+```{r}
+group_by(raw.int.tb, WALDENTUMF) %>%
+  count() %>%
+    knitr::kable()
+```
+
+I have discussed this with Anita and we have decided to combine the 26 plots with `Unknown` forest origin with the 5502 plots with the `Always forest` forest origin.
+Our reasoning here is that both these categories describe plots that have been forested for a long time that do not show obvious signs of any of the three sorts of reforestation.
+For the purposes of describing ant habitat we consider these categories as similar enough to combine.
+
+I am also combining `Artificial reforestation` with `Mixed reforestation` due to the small number of observations classified as `Mixed reforestation`.
+
+```{r}
+WALDENTUMF.tb <- select(raw.int.tb, CLNR, WALDENTUMF) %>%
+  mutate(WALDENTUMF.cat = case_when(
+                            (WALDENTUMF == 1) | (WALDENTUMF == 5) ~ 'Old Forest',
+                             WALDENTUMF == 2 ~ 'Natural reforestation',
+                            (WALDENTUMF == 3) | (WALDENTUMF == 4) ~ 'Artificial/Mixed reforestation',
+                          )
+  )
+
+group_by(WALDENTUMF.tb, WALDENTUMF.cat, WALDENTUMF) %>%
+  count() %>%
+    knitr::kable()
+```
+
+```{r}
+WALDENTUMF.tb <- select(WALDENTUMF.tb, CLNR, WALDENTUMF.cat)
+```
+
+### MID 332 = AUFFORUMF = Year of afforestation
+
+Afforestation refers to the establishment of forest where there was none previously.
+Thus `AUFFORUMF` is an estimate of the when people replanted trees in an area from which trees had previously been cleared.
+Consequently, `AUFFORUMF` is very different to stand age since a patch of forest may have been harvested multiple times since it established.
+Furthermore, for plots where people did not replant trees (either because it was always forest or because it was allowed to reforest naturally) there is no `AUFFORUMF` value.
+
+```{r,echo=FALSE}
+MID.332.key.tb <- tribble(~AUFFORUMF, ~AUFFORUMF.Interval, ~Mid.Point,
+  -1, 'Missing'    , NA,                         
+   1, 'Before 1851', 1845,
+   2, '1851 – 1860', 1855,
+   3, '1861 – 1870', 1865,
+   4, '1871 – 1880', 1875,
+   5, '1881 – 1890', 1885,
+   6, '1891 – 1900', 1895,
+   7, '1901 – 1910', 1905,
+   8, '1911 – 1920', 1915,
+   9, '1921 – 1930', 1925,
+  10, '1931 – 1940', 1935,
+  11, '1941 – 1950', 1945,
+  12, '1951 – 1960', 1955,
+  13, '1961 – 1970', 1965,
+  14, '1971 – 1980', 1975,
+  15, '1981 – 1990', 1985,
+  16, '1991 – 2000', 1995,
+  17, '2001 – 2010', 2005
+  )
+
+knitr::kable(x = MID.332.key.tb, format = 'markdown')
+```
+
+Are all the missing values in `AUFFORUMF` associated with entries of `Old Forest` in `WALDENTUMF`?
+That is, are these `AUFFORUMF` values missing because there is assumed to have been no afforestation at these locations?
+
+```{r}
+select(raw.int.tb, CLNR, AUFFORUMF, WALDENTUMF) %>%
+  filter(AUFFORUMF == -1) %>%
+    group_by(WALDENTUMF) %>%
+      count() %>%
+        knitr::kable()
+```
+
+```{r}
+filter(raw.int.tb, AUFFORUMF == -1) %>%
+  nrow()
+```
+
+```{r}
+nrow(raw.int.tb)
+```
+
+Thus the vast majority of observations have a missing value for `AUFFORUMF`.
+Consequently I will not use this variable in the analysis.
+
+### MID 344 = ZWANUANT = Proportion of salvage cut
+
+`ZWANUANT` contains an estimate of the percentage of trees in a plot that were removed in unplanned removals since NFI2.
+Each of these unplanned removals will have followed some unexpected event that necessitated the removal.
+Each observation of a `ZWANUANT` value greater than zero should be accompanied by an observation of the reason for the associated removal of trees recorded in the variable `ZWANUURS` (MID 345).
+
+```{r, message = FALSE, warning = FALSE}
+ggplot(raw.int.tb, aes(x = ZWANUANT)) +
+  geom_histogram(fill = 'grey', colour = 'black') +
+    theme_bw()
+```
+
+This would be a problematic distribution for explanatory variable values in a multiple linear regression but because we are using a binary tree based technique this is not such problem.
+
+```{r}
+sort(unique(raw.int.tb$ZWANUANT))
+```
+
+```{r, message = FALSE, warning = FALSE}
+filter(raw.int.tb, ZWANUANT > 0) %>%
+  ggplot(aes(x = ZWANUANT)) +
+    geom_histogram(fill = 'grey', colour = 'black') +
+    theme_bw()
+```
+
+```{r}
+ZWANUANT.tb <- select(raw.int.tb, CLNR, ZWANUANT)
+```
+
+### MID 345 = ZWANUURS = Ursache der Zwangsnutzung = Reason for salvage cuts
+
+```{r}
+ZWANUURS.Key.tb <- tribble(~ZWANUURS, ~ZWANUURS.TXT.DE, ~ZWANUURS.TXT.EN,
+-1, 'Wert nicht ermittelt', 'Value not determined',
+ 1, 'Insekten',  'Insects',
+ 2, 'Pilze',  'Fungus',
+ 3, 'Windwurf',  'Windthrow',
+ 4, 'Schneelast',  'Snow load',
+ 5, 'Lawinen',  'Avalanches',
+ 6, 'Rüfen', 'Landslides',
+ 7, 'Hochwasser', 'Floods',
+ 8, 'Waldbrand', 'Forest fire',
+ 9, 'Vitalitätsverlust', 'Loss of vitality',
+10, 'Übrige', 'Other',
+)
+
+ZWANUURS.Key.tb %>% knitr::kable()
+```
+
+```{r}
+select(raw.int.tb, CLNR, ZWANUURS) %>%
+  left_join(y = ZWANUURS.Key.tb, by = 'ZWANUURS') %>%
+    group_by(ZWANUURS, ZWANUURS.TXT.DE, ZWANUURS.TXT.EN) %>%
+      count() %>%
+        knitr::kable(col.names = c('ZWANUURS', 'ZWANUURS.TXT.DE', 'ZWANUURS.TXT.EN', 'Number'))
+```
+
+Check are all missing values for `ZWANUURS` plots where `ZWANUANT == 0`:
+
+```{r}
+select(raw.int.tb, CLNR, ZWANUURS, ZWANUANT) %>%
+  filter(ZWANUURS == -1) %>%
+    pull(ZWANUANT) %>%
+      unique() == 0
+```
+
+Thus all plots where `ZWANUURS == -1` did not have a salvage cut performed.
+Consequently we can recode `ZWANUURS == -1` to `No Cut`:
+
+```{r}
+ZWANUURS.Key.tb <- mutate(ZWANUURS.Key.tb,
+                           ZWANUURS.TXT.EN.2 = case_when(
+                                                 ZWANUURS == -1 ~ 'No Cut',
+                                                 !(ZWANUURS == -1) ~ ZWANUURS.TXT.EN
+                                               )
+                   )
+
+ZWANUURS.Key.tb %>% knitr::kable()
+```
+
+```{r}
+select(raw.int.tb, CLNR, ZWANUURS) %>%
+  left_join(y = ZWANUURS.Key.tb, by = 'ZWANUURS') %>%
+    group_by(ZWANUURS, ZWANUURS.TXT.DE, ZWANUURS.TXT.EN.2) %>%
+      count() %>%
+        knitr::kable(col.names = c('ZWANUURS', 'ZWANUURS.TXT.DE', 'ZWANUURS.TXT.EN.2', 'Number'))
+```
+
+Aggregating to produce a set of categories which all contain > 100 observations:
+
+| ZWANUURS|ZWANUURS.TXT.DE      |ZWANUURS.TXT.EN.2 | Number|  Aggregated Category |
+|--------:|:--------------------|:-----------------|------:|----------------------|
+|       -1|Wert nicht ermittelt |No Cut            |   6033| No Cut               |
+|        1|Insekten             |Insects           |    222| Insects              |
+|        2|Pilze                |Fungus            |     31| Tree Health/Other    |
+|        9|Vitalitätsverlust    |Loss of vitality  |     62| Tree Health/Other    |
+|       10|Übrige               |Other             |     10| Tree Health/Other    |
+|        3|Windwurf             |Windthrow         |    163| Natural Destruction  |
+|        4|Schneelast           |Snow load         |     81| Natural Destruction  |
+|        5|Lawinen              |Avalanches        |      5| Natural Destruction  |
+|        6|Rüfen                |Landslides        |     10| Natural Destruction  |
+|        7|Hochwasser           |Floods            |      1| Natural Destruction  |
+
+
+While we have no observations of `Forest Fire` I would include such observations in our Natural Destruction category.
+
+```{r}
+ZWANUURS.Key.tb <- mutate(ZWANUURS.Key.tb,
+                           ZWANUURS.TXT.EN.3 = case_when(
+                                                 ZWANUURS == -1 ~ 'No Salvage Cut',
+                                                 ZWANUURS ==  1 ~ 'Insects',
+                                                 ZWANUURS %in% c(2, 9, 10) ~  'Tree Health/Other',
+                                                 ZWANUURS %in% c(3, 4, 5, 6, 7, 8) ~ 'Natural Destruction'
+                                               )
+                   )
+
+select(ZWANUURS.Key.tb, ZWANUURS, ZWANUURS.TXT.EN, ZWANUURS.TXT.EN.3) %>%
+  knitr::kable()
+```
+
+```{r}
+ZWANUURS.tb <- select(raw.int.tb, CLNR, ZWANUURS) %>%
+  left_join(y = ZWANUURS.Key.tb, by = 'ZWANUURS')
+```
+
+```{r}
+group_by(ZWANUURS.tb, ZWANUURS, ZWANUURS.TXT.EN.3) %>%
+  count() %>%
+    knitr::kable(col.names = c('ZWANUURS', 'ZWANUURS.TXT.EN.3', 'Number'))
+```
+
+```{r}
+group_by(ZWANUURS.tb, ZWANUURS.TXT.EN.3) %>%
+  count() %>%
+    knitr::kable(col.names = c('ZWANUURS.TXT.EN.3', 'Number'))
+```
+
+```{r}
+ZWANUURS.tb <- select(ZWANUURS.tb, CLNR, ZWANUURS.TXT.EN.3) %>%
+  rename(ZWANUURS.AGG = ZWANUURS.TXT.EN.3)
+```
+
+### MID 352 = ERNTART = Type of harvest
+
+`ERNTART` describes the types of equipment (tools, machines, etc.) that were used to harvest timber from a plot.
+
+```{r}
+tribble(~Code, ~Meaning,
+1,  'Axe',
+2,  'Chain saw (=CS)',
+6,  'CS/processor',
+7,  'Wheeled harvester',
+8,  'Tracked harvester',
+9,  'Walking harvester',
+10, 'CS/Chipper',
+11, 'Feller-buncher/chipper',
+12, 'CS/mobile yarder/processor',
+13, 'CS/Helicopter',
+14, 'Other'
+) %>%
+  knitr::kable()
+```
+
+```{r}
+mutate(raw.int.tb, ERNTART.cat = case_when(ERNTART == 1  ~ 'Axe',
+                                           ERNTART == 2  ~ 'Chain saw (=CS)',
+                                           ERNTART == 6  ~ 'CS/processor',
+                                           ERNTART == 7  ~ 'Wheeled harvester',
+                                           ERNTART == 8  ~ 'Tracked harvester',
+                                           ERNTART == 9  ~ 'Walking harvester',
+                                           ERNTART == 10 ~ 'CS/Chipper',
+                                           ERNTART == 11 ~ 'Feller-buncher/chipper',
+                                           ERNTART == 12 ~ 'CS/mobile yarder/processor',
+                                           ERNTART == 13 ~ 'CS/Helicopter',
+                                           ERNTART == 14 ~ 'Other'
+                                          )
+      ) %>%
+  group_by(ERNTART, ERNTART.cat) %>%
+    count() %>%
+      arrange(desc(n)) %>%
+        knitr::kable(col.names = c('ERNTART', 'ERNTART.cat', 'Number'))
+```
+
+I asked Christoph how we could combine some of these harvesting methods into new categories based on similar levels of habitat disturbance associated with each of these harvesting methods and he suggested the the following four groups of categories.
+I have given each group of categories a name below.
+
+| ERNTART | Category Name              |
+|--------:|:---------------------------|
+| 1-2,14  | CS/Other                   |
+| 6-11    | Machines                   |
+| 12      | CS/mobile yarder/processor |
+| 13      | CS/Helicopter              |
+
+```{r}
+ERNTART.Cat.Agg.tb <- select(raw.int.tb, CLNR, ERNTART) %>%
+  mutate(ERNTART.cat = case_when(ERNTART == 1  ~ 'Axe',
+                                 ERNTART == 2  ~ 'Chain saw (=CS)',
+                                 ERNTART == 6  ~ 'CS/processor',
+                                 ERNTART == 7  ~ 'Wheeled harvester',
+                                 ERNTART == 8  ~ 'Tracked harvester',
+                                 ERNTART == 9  ~ 'Walking harvester',
+                                 ERNTART == 10 ~ 'CS/Chipper',
+                                 ERNTART == 11 ~ 'Feller-buncher/chipper',
+                                 ERNTART == 12 ~ 'CS/mobile yarder/processor',
+                                 ERNTART == 13 ~ 'CS/Helicopter',
+                                 ERNTART == 14 ~ 'Other'
+                                ),
+         ERNTART.Agg.Cat = case_when(ERNTART %in% c(1, 2, 14) ~ 'CS/Other',
+                                     ERNTART %in% c(6:11)     ~ 'Machines',
+                                     ERNTART == 12            ~ 'CS/mobile yarder/processor',
+                                     ERNTART == 13            ~ 'CS/Helicopter'
+                                    )       
+        )
+
+group_by(ERNTART.Cat.Agg.tb, ERNTART, ERNTART.cat, ERNTART.Agg.Cat) %>%
+  count() %>%
+    arrange(ERNTART.Agg.Cat) %>%
+      knitr::kable(col.names = c('ERNTART', 'ERNTART.cat', 'ERNTART.Agg.Cat', 'Number'))
+```
+
+```{r}
+group_by(ERNTART.Cat.Agg.tb, ERNTART.Agg.Cat) %>%
+  count() %>%
+    arrange(ERNTART.Agg.Cat) %>%
+      knitr::kable(col.names = c('ERNTART.Agg.Cat', 'Number'))
+```
+
+```{r}
+ERNTART.Cat.Agg.tb <- select(ERNTART.Cat.Agg.tb, CLNR, ERNTART.Agg.Cat)
+```
+
+### MID 404 = BESTEVOLUMF = Type of stand origin
+
+```{r}
+tribble(
+~Code, ~Meaning,
+1, 'Natural', 
+2, 'Artificial',
+3, 'Mixed',
+4, 'Unknown'
+) %>%
+  knitr::kable()
+```
+
+```{r}
+mutate(raw.int.tb,
+       BESTEVOLUMF.cat = case_when( BESTEVOLUMF == 1 ~ 'Natural',
+                                    BESTEVOLUMF == 2 ~ 'Artificial',
+                                    BESTEVOLUMF == 3 ~ 'Mixed',
+                                    BESTEVOLUMF == 4 ~ 'Unknown'
+                                  )
+      ) %>%
+  group_by(BESTEVOLUMF.cat) %>%
+    count() %>%
+      knitr::kable()
+```
+
+Add `Unknown` to `Natural`
+
+```{r}
+BESTEVOLUMF.tb <- select(raw.int.tb, CLNR, BESTEVOLUMF) %>%
+  mutate(BESTEVOLUMF.cat = case_when(BESTEVOLUMF %in% c(1,4) ~ 'Natural/Unknown',
+                                     BESTEVOLUMF == 2 ~ 'Artificial',
+                                     BESTEVOLUMF == 3 ~ 'Mixed'
+                                    )
+        ) %>%
+    select(-BESTEVOLUMF)
+
+group_by(BESTEVOLUMF.tb, BESTEVOLUMF.cat) %>%
+  count() %>%
+    knitr::kable()
+```
+
+### MID 600 = FLSCHUMF = Type of areal damage
+
+FLSCHJAHR1 = Year of First Areal Damage
+
+FLSCHUMF1  = Type of First Areal Damage
+
+FLSCHJAHR2 = Year of Second Areal Damage
+
+FLSCHUMF2  = Type of Second Areal Damage
+
+Plots (CLNR's) without records in these columns have had no areal damage since NFI2.
+
+Furthermore, if the field team did not recognize any areal damage (>= 10% of the interpretation area) the associated FLSCHJAHR will be recorded as missing. 
+Christoph recommends that I only use FLSCHUMF1 where there is a corresponding FLSCHJAHR1 value and that I recode the remainder as `no damage` (code 15).
+As it turns out, this has already been done in the most recent installment of the data:
+
+```{r}
+filter(FLSCHUMF.tb, is.na(FLSCHJAHR1)) %>%
+  pull(FLSCHUMF1) %>%
+    unique()
+```
+
+Key to Levels of FLSCHUMF1 and FLSCHUMF2:
+
+```{r}
+Key.FLSCHUMF1.tb <- tribble(~FLSCHUMF1, ~FLSCHUMF1.txt,
+ -1, 'Missing',
+  1, 'Wind, storm',
+  2, 'Snow load',
+  3, 'Avalanche',
+  4, 'Rock avalanche, rockslide, rockfall',
+  5, 'Landslide, mudflow',
+  6, 'Flood',
+  7, 'Fire, forest fire',
+  8, 'Loss of Vitality, drought, aridity',
+  9, 'Insects',
+ 10, 'Phytopathogeneous fungi, viruses, bacteria',
+ 11, 'Game (wild animals)',
+ 12, 'Livestock',
+ 13, 'Timber harvesting',
+ 14, 'Other human causes (construction, recreation, military, etc.)',
+ 15, 'No area damage')
+
+Key.FLSCHUMF1.tb %>% knitr::kable()
+```
+
+```{r}
+Key.FLSCHUMF2.tb <- tribble(~FLSCHUMF2, ~FLSCHUMF2.txt,
+ -1, 'Missing',
+  1, 'Wind, storm',
+  2, 'Snow load',
+  3, 'Avalanche',
+  4, 'Rock avalanche, rockslide, rockfall',
+  5, 'Landslide, mudflow',
+  6, 'Flood',
+  7, 'Fire, forest fire',
+  8, 'Loss of Vitality, drought, aridity',
+  9, 'Insects',
+ 10, 'Phytopathogeneous fungi, viruses, bacteria',
+ 11, 'Game (wild animals)',
+ 12, 'Livestock',
+ 13, 'Timber harvesting',
+ 14, 'Other human causes (construction, recreation, military, etc.)',
+ 15, 'No area damage')
+
+Key.FLSCHUMF2.tb %>% knitr::kable()
+```
+
+```{r}
+FLSC.HUMF.JAHR.1.tb <- select(FLSCHUMF.tb, CLNR, INVNR, FLSCHUMF1, FLSCHJAHR1) %>%
+  left_join(y = Key.FLSCHUMF1.tb, by = 'FLSCHUMF1') %>%
+    mutate(FLSCHUMF1.txt.rc = case_when(
+                                !is.na(FLSCHJAHR1) ~ FLSCHUMF1.txt,
+                                 is.na(FLSCHJAHR1) ~ 'No area damage'
+                              ),
+           FLSCHUMF1.rc     = case_when(
+                                !is.na(FLSCHJAHR1) ~ FLSCHUMF1,
+                                 is.na(FLSCHJAHR1) ~ 15,
+                              )           
+          )
+
+group_by(FLSC.HUMF.JAHR.1.tb, FLSCHUMF1.txt.rc) %>%
+  count() %>%
+    arrange(desc(n)) %>%
+      knitr::kable()
+```
+
+I have discussed aggregations of these categories with Anita and Christoph and we have agreed on the following aggregations.
+
+|FLSCHUMF1.txt.rc                                              | Number of Observations | Aggregation    |
+|:-------------------------------------------------------------|-----------------------:|---------------:|
+|No area damage                                                | 6187                   | No damage      |
+|Wind, storm                                                   |   60                   | Extreme Damage |
+|Avalanche                                                     |   22                   | Extreme Damage |
+|Landslide, mudflow                                            |   11                   | Extreme Damage |
+|Flood                                                         |    2                   | Extreme Damage |
+|Rock avalanche, rockslide, rockfall                           |    1                   | Extreme Damage |
+|Snow load                                                     |   50                   | Damage         |
+|Insects                                                       |   12                   | Damage         |
+|Loss of Vitality, drought, aridity                            |    7                   | Damage         |
+|Other human causes (construction, recreation, military, etc.) |    2                   | Damage         |
+|Phytopathogeneous fungi, viruses, bacteria                    |    2                   | Damage         |
+|Livestock                                                     |    1                   | Damage         |
+
+```{r}
+FLSCHUMF1.tb <- mutate(FLSC.HUMF.JAHR.1.tb,
+                       FLSCHUMF1.Cat.Agg = case_when(
+                         FLSCHUMF1.rc == 15 ~ 'No area damage',
+                         FLSCHUMF1.rc == -1 ~ 'Missing',
+                         FLSCHUMF1.rc %in% c(3, 4, 5, 6, 1) ~ 'Extreme Damage',
+                         FLSCHUMF1.rc %in% c(8, 2, 7, 9, 10, 11, 12, 13, 14, 15) ~ 'Damage'
+                        )
+                      )
+```
+
+```{r}
+group_by(FLSCHUMF1.tb, FLSCHUMF1.Cat.Agg, FLSCHUMF1.txt.rc) %>%
+  count() %>%
+    knitr::kable()
+```
+
+```{r}
+group_by(FLSCHUMF1.tb, FLSCHUMF1.Cat.Agg) %>%
+  count() %>%
+    knitr::kable()
+```
+
+Check:
+```{r}
+filter(FLSCHUMF1.tb, is.na(FLSCHJAHR1) & !(FLSCHUMF1.Cat.Agg == 'No area damage')) %>%
+  group_by(FLSCHUMF1.txt) %>%
+    count() %>%
+      knitr::kable()
+```
+
+Check that the year of areal damage is prior to the year the plot was searched for ants and where this is not the case recode the areal damage as 'No area damage' (because there was no areal damage associated with these observations prior to the year the plot was searched for ants):
+
+```{r}
+field.year.tb <- select(plotdaten.tb, CLNR, DATUMF) %>%
+  mutate(field.year = lubridate::year(DATUMF))
+```
+
+```{r}
+FLSCHUMF1.v2.tb <- full_join(x = FLSCHUMF1.tb, y = field.year.tb, by = 'CLNR') %>%
+  mutate(diff = field.year - FLSCHJAHR1,
+         FLSCHUMF1.Cat.Agg.Rev = case_when( !is.na(field.year) & !is.na(FLSCHJAHR1) & (diff >= 0) ~ FLSCHUMF1.Cat.Agg,
+                                            !is.na(field.year) & !is.na(FLSCHJAHR1) & (diff < 0) ~ 'No area damage',
+                                            !is.na(field.year) & is.na(FLSCHJAHR1) ~  'No area damage',
+                                             is.na(field.year) ~  'Error'
+                                 ) 
+  )
+
+group_by(FLSCHUMF1.v2.tb, FLSCHUMF1.Cat.Agg.Rev) %>%
+  count() %>%
+    knitr::kable()
+```
+
+Calculate the number of years that have elapsed between the calendar year of the areal damage recorded as `FLSCHUMF1` and the calendar year of the field survey and store this as a new variable `ysad.1`
+```{r, message= FALSE}
+FLSCHUMF1.v2.tb <- mutate(FLSCHUMF1.v2.tb,
+                          ysad.1 = case_when(
+                            (FLSCHUMF1.Cat.Agg.Rev == 'No area damage')  ~ 25,
+                            !(FLSCHUMF1.Cat.Agg.Rev == 'No area damage') & diff >=0 ~ diff
+                          )
+                   )
+
+ggplot(data = FLSCHUMF1.v2.tb, aes(x = ysad.1)) + geom_histogram(fill = 'grey', colour = 'black') + theme_bw()
+```
+
+```{r, message = FALSE, warning = FALSE}
+ggplot(data = FLSCHUMF1.v2.tb, aes(x = ysad.1)) + geom_histogram(binwidth = 1, colour = 'black', fill = 'grey') + scale_x_continuous(breaks = 0:10, limits = c(0,10)) + theme_bw() 
+```
+
+Check if FLSCHJAHR1 < FLSCHJAHR2 in all plots in which both were recorded
+
+```{r}
+mutate(FLSCHUMF.tb, dist.yr.diff = FLSCHJAHR2 - FLSCHJAHR1) %>%
+  pull(dist.yr.diff) %>%
+    summary()
+```
+
+So there are some plots where FLSCHJAHR2 < FLSCHJAHR1 and other plots where FLSCHJAHR2 > FLSCHJAHR1 and yet others where FLSCHJAHR2 == FLSCHJAHR1.
+
+Preparing `FLSCHUMF2` and `FLSCHJAHR2` in the same way I prepared `FLSCHUMF1` and `FLSCHJAHR1` above.
+
+```{r}
+FLSC.HUMF.JAHR.2.tb <- select(FLSCHUMF.tb, CLNR, INVNR, FLSCHUMF2, FLSCHJAHR2) %>%
+  left_join(y = Key.FLSCHUMF2.tb, by = 'FLSCHUMF2') %>%
+    mutate(FLSCHUMF2.txt.rc = case_when(
+                                !is.na(FLSCHJAHR2) ~ FLSCHUMF2.txt,
+                                 is.na(FLSCHJAHR2) ~ 'No area damage'
+                              ),
+           FLSCHUMF2.rc     = case_when(
+                                !is.na(FLSCHJAHR2) ~ FLSCHUMF2,
+                                 is.na(FLSCHJAHR2) ~ 15,
+                              )           
+          )
+
+group_by(FLSC.HUMF.JAHR.2.tb, FLSCHUMF2.txt.rc) %>%
+  count() %>%
+    arrange(desc(n)) %>%
+      knitr::kable()
+```
+
+Employing the same aggregations as above:
+
+```{r}
+FLSCHUMF2.tb <- mutate(FLSC.HUMF.JAHR.2.tb,
+                       FLSCHUMF2.Cat.Agg = case_when(
+                         FLSCHUMF2.rc == 15 ~ 'No area damage',
+                         FLSCHUMF2.rc == -1 ~ 'Missing',
+                         FLSCHUMF2.rc %in% c(3, 4, 5, 6, 1) ~ 'Extreme Damage',
+                         FLSCHUMF2.rc %in% c(8, 2, 7, 9, 10, 11, 12, 13, 14, 15) ~ 'Damage'
+                        )
+                      )
+```
+
+```{r}
+FLSCHUMF2.v2.tb <- full_join(x = FLSCHUMF2.tb, y = field.year.tb, by = 'CLNR') %>%
+  mutate(diff = field.year - FLSCHJAHR2,
+         FLSCHUMF2.Cat.Agg.Rev = case_when( !is.na(field.year) & !is.na(FLSCHJAHR2) & (diff >= 0) ~ FLSCHUMF2.Cat.Agg,
+                                            !is.na(field.year) & !is.na(FLSCHJAHR2) & (diff < 0) ~ 'No area damage',
+                                            !is.na(field.year) & is.na(FLSCHJAHR2) ~  'No area damage',
+                                             is.na(field.year) ~  'Error'
+                                 ) 
+  )
+
+group_by(FLSCHUMF2.v2.tb, FLSCHUMF2.Cat.Agg.Rev) %>%
+  count() %>%
+    knitr::kable()
+```
+
+Calculate the number of years that have elapsed between the calendar year of the areal damage recorded as `FLSCHUMF2` and the calendar year of the field survey and store this as a new variable `ysad.2`
+```{r}
+FLSCHUMF2.v2.tb <- mutate(FLSCHUMF2.v2.tb,
+                          ysad.2 = case_when(
+                            (FLSCHUMF2.Cat.Agg.Rev == 'No area damage')  ~ 25,
+                            !(FLSCHUMF2.Cat.Agg.Rev == 'No area damage') & diff >=0 ~ diff
+                          )
+                   )
+
+group_by(FLSCHUMF2.v2.tb, ysad.2) %>%
+  count() %>%
+    knitr::kable()
+```
+
+Join `FLSCHUMF1.v2.tb` and `FLSCHUMF2.v2.tb` and create new a variable for the class of areal damage most recently prior to the year the plot was searched for ant mounds (`FLSCHUMF.mr`, `mr` stands for most recent) and a new variable (`ysad.mr` = years since areal damage most recent) for the number of years that elapsed between the calendar year of this areal damage and the calendar year in which the plot was searched for ant mounds.
+
+```{r}
+FLSCHUMF.mr.tb <- full_join(x = FLSCHUMF1.v2.tb, y = FLSCHUMF2.v2.tb, by = 'CLNR') %>%
+  mutate(FLSCHUMF.mr = case_when( !is.na(ysad.1) & !is.na(ysad.2) & (ysad.1 <= ysad.2) ~ FLSCHUMF1.Cat.Agg.Rev,
+                                  !is.na(ysad.1) & !is.na(ysad.2) & (ysad.1  > ysad.2) ~ FLSCHUMF2.Cat.Agg.Rev,
+                                                       !is.na(ysad.1) & is.na(ysad.2)  ~ FLSCHUMF1.Cat.Agg.Rev,
+                                                        is.na(ysad.1) & !is.na(ysad.2) ~ FLSCHUMF2.Cat.Agg.Rev
+                       
+                       ),           
+             ysad.mr = case_when( !is.na(ysad.1) & !is.na(ysad.2) & (ysad.1 <= ysad.2) ~ ysad.1,
+                                  !is.na(ysad.1) & !is.na(ysad.2) & (ysad.1  > ysad.2) ~ ysad.2,
+                                                       !is.na(ysad.1) & is.na(ysad.2)  ~ ysad.1,
+                                                        is.na(ysad.1) & !is.na(ysad.2) ~ ysad.2
+                       
+                       )
+  )
+
+group_by(FLSCHUMF.mr.tb, FLSCHUMF.mr) %>%
+  count() %>%
+    knitr::kable()
+```
+
+```{r}
+group_by(FLSCHUMF.mr.tb, ysad.mr) %>%
+  count() %>%
+    knitr::kable()
+```
+
+```{r}
+FLSCHUMF.tb <- select(FLSCHUMF.mr.tb, CLNR, FLSCHUMF.mr, ysad.mr)
+```
+
+### MID 607 = LETZTENU = Years since last silvicultural treatment
+
+Silvicultural treatments involve cutting, tending and planting trees. 
+In areas where the forest has re-established naturally without silvicultural treatments the stand age is given as the `LETZTENU` value.
+Similarly, in areas where the forest appears to never have been cut the stand age is given as the `LETZTENU` value.
+Areas that have had a silvicultural treatment within 12 months of when the plot was surveyed by the NFI have a `LETZTENU` value of `0`.
+
+```{r}
+summary(Add.Plot.Data.LFI4.tb$LETZTENU)
+```
+
+```{r}
+summary(raw.int.tb$LETZTENU)
+```
+
+```{r, message = FALSE, warning = FALSE}
+ggplot(raw.int.tb, aes(x = LETZTENU)) +
+  geom_histogram(fill = 'grey', colour = 'black') +
+    theme_bw()
+```
+
+```{r}
+LETZTENU.tb <- select(raw.int.tb, CLNR, LETZTENU)
+
+summary(LETZTENU.tb$LETZTENU)
+```
+
+Three missing values in `LETZTENU`
+
+```{r}
+filter(LETZTENU.tb, is.na(LETZTENU))
+```
+
+The NFI database contains:
+
+ * LETZTENU = Number of years since last silvicultural treatment.
+
+ * WABAEJAHR = Year of silvicultural treatment 
+  
+ * DATUMF = the date in which the field survey was conducted at a plot
+
+
+At Christoph's suggestion, below I compare LETZTENU to my attempt to calculate an equivalent from WABAEJAHR and DATUMF.
+
+Reading in the Data that contains the date of the field survey:
+
+```{r}
+plotdaten.tb <- read_excel(path = '../rwa/data/NFI/Daten/Plotdaten und Baumdaten_2009-2017_abgeleitete Daten (Version 31.05.2018).xlsx', sheet = 'Plotdaten')
+```
+
+Extracting the relevant data
+
+```{r}
+LETZTENU.tb <- select(raw.int.tb, CLNR, LETZTENU)
+```
+
+```{r}
+field.year.tb <- select(plotdaten.tb, CLNR, DATUMF) %>%
+  mutate(field.year = lubridate::year(DATUMF))
+```
+
+Note `EINGARTUMF.tb` is included in my preparation of the NFI Plot Data.
+Here I am only using data from `EINGARTUMF.tb` in my calculation of the number of years that have elapsed between the most recent silvivultural treatment that precedes the date that plot was searched for ant mounds and the date the plot was searched for ant mounds.
+
+WABAEJAHR = Year of silvicultural treatment
+
+WABAEART = Type of silvicultural treatment
+
+WABAEARTK1 = Type of silvicultural intervention classified
+
+IEART = Type of silvicultural intervention classified
+
+```{r}
+WABAEJAHR.tb <- select(EINGARTUMF.tb, CLNR, WABAEJAHR, WABAEART) %>%
+  mutate(WABAEJAHR.Cal.Yr = case_when(
+                              WABAEJAHR ==  1 ~ 1996,
+                              WABAEJAHR ==  2 ~ 1997,
+                              WABAEJAHR ==  3 ~ 1998,
+                              WABAEJAHR ==  4 ~ 1999,
+                              WABAEJAHR ==  5 ~ 2000,
+                              WABAEJAHR ==  6 ~ 2001,
+                              WABAEJAHR ==  7 ~ 2002,
+                              WABAEJAHR ==  8 ~ 2003,
+                              WABAEJAHR ==  9 ~ 2004,
+                              WABAEJAHR == 10 ~ 2005,
+                              WABAEJAHR == 11 ~ 2006,
+                              WABAEJAHR == 12 ~ 2007,
+                              WABAEJAHR == 13 ~ 2008,
+                              WABAEJAHR == 14 ~ 2009,
+                              WABAEJAHR == 15 ~ 2010,
+                              WABAEJAHR == 16 ~ 2011,
+                              WABAEJAHR == 17 ~ 2012,
+                              WABAEJAHR == 18 ~ 2013,
+                              WABAEJAHR == 19 ~ 2014,
+                              WABAEJAHR == 20 ~ 2015,
+                              WABAEJAHR == 21 ~ 2016,
+                              WABAEJAHR == 22 ~ 2017
+                            )
+  ) %>%
+    filter(!(WABAEART == 1))
+```
+
+Joining the relevant data
+
+```{r}
+nrow(WABAEJAHR.tb) < nrow(plotdaten.tb)
+```
+
+If a CLNR was not present in `EINGARTUMF.tb` then it has not had an intervention since 1996.
+
+Thus we will only be able to get an accurate estimate for CLNR that are present in `EINGARTUMF.tb`.
+
+```{r}
+join.1.tb <- left_join(x = WABAEJAHR.tb, y = field.year.tb, by = 'CLNR')
+```
+
+```{r}
+join.2.tb <- left_join(x = join.1.tb, y = LETZTENU.tb, by = 'CLNR')
+```
+
+Calculating the number of years since the last silvicultural treatment
+
+```{r}
+test.tb <- mutate(join.2.tb, yrs.diff = field.year - WABAEJAHR.Cal.Yr) %>%
+  filter(yrs.diff >= 0) %>%
+    group_by(CLNR) %>%
+      summarise(years.since.last.treatment = min(yrs.diff),
+                LETZTENU = unique(LETZTENU))
+```
+
+Counting the Number of Observations with years.since.last.treatment values that differ from LETZTENU values
+
+```{r}
+filter(test.tb, !(LETZTENU == years.since.last.treatment)) %>%
+    nrow()
+```
+
+Thus 311 observations have different values for years.since.last.treatment and LETZTENU.
+
+Ploting years.since.last.treatment against LETZTENU for the CLNR where these values differed:
+
+I have added a little random noise to the positions of the points to avoid having many points plotted on top of each other.
+The dashed blue line is a one to one reference line.
+Mouse over a point to see the CLNR it represents.
+Click and drag a box to zoom into that region (double click anywhere on the plot to zoom out again).
+```{r, message = FALSE, warning = FALSE}
+p1 <- select(test.tb, CLNR, LETZTENU, years.since.last.treatment) %>%
+  filter(!(LETZTENU == years.since.last.treatment)) %>%
+    ggplot(aes(x = LETZTENU, y = years.since.last.treatment, label = CLNR)) +
+      geom_jitter(alpha = 0.25) +
+      geom_abline(slope = 1, intercept = 0, colour = 'blue', linetype = 'dashed') +
+      theme_bw() 
+  
+ggplotly(p1)  
+```
+
+Christoph and I discussed this discrepancy and Christoph has recommended the following approach to calculating the years since the most recent silvicultural treatment (intervention).
+
+For all plots (CLNR values) that have a most recent intervention prior to 1996 I will take the value of LETZTENU as the number of years between the most recent intervention and the year of the field survey.
+
+For all plots (CLNR values) that have a most recent intervention after 1996 I will use my calculation of the number of years between the most recent intervention and the year of the field survey.
+
+Recall that if a CLNR is not present in EINGARTUMF.tb then it has not had an intervention since 1996:
+
+Christoph writes that: 'when it concerns to the years of the LFI4 (2009-2017), the silvicultural intervention in the corresponding year always took place before the field was surveyed. If you are also interested in the interventions before 2009, I would have to think about how it could be derived.'
+Thus when the field survey was conducted in the same years as a silvicultural intervention it is safe to calculate the years since the last silvicultural intervention by subtracting the year of the silvicultural intervention from the year of the field survey.
+My concern was that if at some plots the intervention had occurred after the field survey but still within the same year then the years since the last silvicultural intervention would actually be the number of years from the date of the field survey to the most recent intervention that had been conducted prior to the field survey rather than zero.
+
+```{r}
+yrs.since.last.trt.tb <- left_join(x = LETZTENU.tb, y = EINGARTUMF.tb, by = 'CLNR') %>%
+  left_join(x = ., y = field.year.tb, by = 'CLNR') %>%
+    mutate(WABAEJAHR.Cal.Yr = case_when(
+                                WABAEJAHR ==  1 ~ 1996,
+                                WABAEJAHR ==  2 ~ 1997,
+                                WABAEJAHR ==  3 ~ 1998,
+                                WABAEJAHR ==  4 ~ 1999,
+                                WABAEJAHR ==  5 ~ 2000,
+                                WABAEJAHR ==  6 ~ 2001,
+                                WABAEJAHR ==  7 ~ 2002,
+                                WABAEJAHR ==  8 ~ 2003,
+                                WABAEJAHR ==  9 ~ 2004,
+                                WABAEJAHR == 10 ~ 2005,
+                                WABAEJAHR == 11 ~ 2006,
+                                WABAEJAHR == 12 ~ 2007,
+                                WABAEJAHR == 13 ~ 2008,
+                                WABAEJAHR == 14 ~ 2009,
+                                WABAEJAHR == 15 ~ 2010,
+                                WABAEJAHR == 16 ~ 2011,
+                                WABAEJAHR == 17 ~ 2012,
+                                WABAEJAHR == 18 ~ 2013,
+                                WABAEJAHR == 19 ~ 2014,
+                                WABAEJAHR == 20 ~ 2015,
+                                WABAEJAHR == 21 ~ 2016,
+                                WABAEJAHR == 22 ~ 2017
+                              ),
+           yrs.diff = case_when( is.na(WABAEJAHR) ~ LETZTENU,
+                                !is.na(WABAEJAHR) ~ (field.year - WABAEJAHR.Cal.Yr),
+                               ) 
+    ) %>%
+      filter(yrs.diff >= 0) %>%
+        group_by(CLNR) %>%
+          summarise(years.since.last.treatment = min(yrs.diff))
+
+filter(yrs.since.last.trt.tb, years.since.last.treatment == 0) %>%
+  nrow()
+```
+
+```{r, message = FALSE, warning = FALSE}
+ggplot(data = yrs.since.last.trt.tb, aes(x = years.since.last.treatment)) + geom_histogram(fill = 'grey', colour = 'black') + theme_bw()
+```
+
+## Examine All Prepared Variables
+
+### ERSKONZ
+
+```{r}
+colnames(ERSKONZ.tb)
+```
+
+```{r}
+group_by(ERSKONZ.tb, ERSKONZ.TXT) %>%
+  count() %>% knitr::kable()
+```
+
+### WAFKTVOR4
+
+```{r}
+colnames(WAFKTVOR4.tb)
+```
+
+```{r}
+group_by(WAFKTVOR4.tb, WAFKTVOR4.Agg.Cat) %>%
+  count() %>% knitr::kable()
+```
+
+### ERHNUTSUMF
+
+```{r}
+colnames(ERHNUTSUMF.tb)
+```
+
+```{r}
+select(ERHNUTSUMF.tb, -CLNR) %>%
+  mutate_all(as.factor) %>%
+    summary() %>%
+      knitr::kable()
+```
+
+### ERHNUTINTUMF
+
+```{r}
+colnames(ERHNUTINTUMF.tb) 
+```
+
+```{r}
+group_by(ERHNUTINTUMF.tb, ERHNUTINTUMF.num) %>%
+  count() %>% knitr::kable()
+```
+
+### ERHNUT
+
+```{r}
+colnames(ERHNUT.tb)
+```
+
+```{r}
+select(ERHNUT.tb, -CLNR) %>%
+  mutate_all(as.factor) %>%
+    summary() %>%
+      knitr::kable()
+```
+
+### WALDENTUMF
+
+```{r}
+colnames(WALDENTUMF.tb)
+```
+
+```{r}
+group_by(WALDENTUMF.tb, WALDENTUMF.cat) %>%
+  count() %>% knitr::kable()
+```
+
+### ZWANUANT 
+
+```{r}
+colnames(ZWANUANT.tb)
+```
+
+```{r}
+pull(ZWANUANT.tb, ZWANUANT) %>% summary()
+```
+
+### ZWANUURS
+
+```{r}
+colnames(ZWANUURS.tb)
+```
+
+```{r}
+group_by(ZWANUURS.tb, ZWANUURS.AGG) %>%
+  count() %>% knitr::kable()
+```
+
+### ERNTART
+
+```{r}
+colnames(ERNTART.Cat.Agg.tb)
+```
+
+```{r}
+group_by(ERNTART.Cat.Agg.tb, ERNTART.Agg.Cat) %>%
+  count() %>% knitr::kable()
+```
+
+### BESTEVOLUMF
+
+```{r}
+colnames(BESTEVOLUMF.tb)
+```
+
+```{r}
+group_by(BESTEVOLUMF.tb, BESTEVOLUMF.cat) %>%
+  count() %>% knitr::kable()
+```
+
+### FLSCHUMF
+
+```{r}
+colnames(FLSCHUMF.tb)
+```
+
+```{r}
+group_by(FLSCHUMF.tb, FLSCHUMF.mr) %>%
+  count() %>%
+    knitr::kable()
+```
+
+```{r}
+group_by(FLSCHUMF.tb, ysad.mr) %>%
+  count() %>%
+    knitr::kable()
+```
+
+### Years since last silvicultural treatment
+
+```{r}
+colnames(yrs.since.last.trt.tb)
+```
+
+This column name is a little long so I'm replacing it with an acronym (`yslst` = years since last silvicultural treatment):
+
+```{r}
+yrs.since.last.trt.tb <- rename(yrs.since.last.trt.tb, yslst = years.since.last.treatment)
+```
+
+```{r}
+pull(yrs.since.last.trt.tb, yslst) %>% summary()
+```
+
+## Join All Prepared Variables
+
+```{r}
+NFI.Interviews.tb <- reduce(.x = list(ERSKONZ.tb, WAFKTVOR4.tb, ERHNUTSUMF.tb, ERHNUTINTUMF.tb, ERHNUT.tb, WALDENTUMF.tb, ZWANUANT.tb, ZWANUURS.tb, ERNTART.Cat.Agg.tb, BESTEVOLUMF.tb, FLSCHUMF.tb, yrs.since.last.trt.tb), .f = full_join, by = 'CLNR')
+```
+
+## Examine the Joined Data
+
+Check for duplicate rows:
+```{r}
+group_by(NFI.Interviews.tb, CLNR) %>%
+  count() %>%
+    summary()
+```
+
+```{r}
+NFI.Interviews.tb <- select(RPA.raw.plot.tb, CLNR) %>%
+  left_join(x = ., y = NFI.Interviews.tb, by = 'CLNR')
+```
+
+The prepared data contain of 6357 observations.
+```{r}
+nrow(NFI.Interviews.tb)
+```
+
+The prepared data contain 33 variables.
+```{r}
+select(NFI.Interviews.tb, -CLNR) %>%
+  ncol()
+```
+
+These variables are:
+```{r}
+select(NFI.Interviews.tb, -CLNR) %>%
+  colnames() %>%
+    sort()
+```
+
+## Examine the Missing Data
+
+```{r}
+anyNA(NFI.Interviews.tb)
+```
+
+```{r, fig.width = 12, fig.height = 12}
+select(NFI.Interviews.tb, -CLNR) %>%
+  vis_miss(x = ., cluster = TRUE, sort_miss = TRUE) + theme(axis.text.x = element_text(angle = 90))
+```
+
+```{r}
+select_if(NFI.Interviews.tb, anyNA) %>%
+  summary()
+```
+
+## Write out the Prepared Data
+   
+```{r, eval = FALSE}
+save(list = 'NFI.Interviews.tb', file = '../rwa/data/NFI/Prepared_Interviews_Data/NFI.Interviews.RData')
+```

@@ -1,0 +1,982 @@
+---
+title: "S8 Partitioning the Data for Cross Validation"
+author: "Author Blank for Double Blind Peer Review"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Introduction
+
+In this file I create a collection of partitions of the data into training and validation sets for use in cross validation.
+
+To avoid spatial dependence between observations in these training and validation sets I enforce exclusion buffers around the perimeters of the regions containing the observations that comprise these validation sets.
+Any observations which fall within the exclusion buffer associated with a particular validation set are excluded from both this validation set and the associated training set.
+I have set the widths of these exclusion buffers to slightly beyond the maximum estimated range of spatial dependence detected amoung the response observation.
+Here I follow the recommendations of Roberts et al. (2017) and partition the data for cross validation informed by an investigation of the spatial dependence structure among the response observation rather than the spatial dependence structure among the residuals from some model fitted to these observations.
+
+In the first section of this file I investigate the spatial dependence structure of the Red Wood Ant mound occurrence data.
+My objective here is to identify a distance beyond which spatial dependence is no longer detected among these data.
+In the next section of this file, I use this distance in the creation of a set partitions of the data for cross validation in which no observations in any training set are within this distance of any observations in the associated validation set.
+This approach is essentially monte carlo cross validation with the addition of spatial exclusion buffers around the validation set observations.
+Thus in each partition of the data there will be some observations that are absent from both the training and validation sets.
+My motivation here is to mitigate as much as possible any spatial dependence between observations in the training and validation sets.
+This approach is adapted from the leave one out cross validation scheme with spatial buffering desribed in Roberts et al. (2017) which has also been referred to as h-block cross validation.
+The size of our data in this analysis would render the computational expense of leave one out cross validation prohibitive, consequently I am adopting this variant on monte carlo cross validation.
+
+## Investigating the spatial dependence structure of the Red Wood Ant mound occurrence data
+
+### Load the R packages 
+
+```{r, message = FALSE, warnings = FALSE}
+library(tidyverse)
+library(sp)
+library(spdep)
+library(sf)
+library(plotly)
+```
+
+### Load and Prepare the Data
+
+```{r}
+load('~/rwa/data/spatial_displacement_matrix/RWAMPA_dist_tb.RData')
+```
+
+```{r}
+load('~/rwa/data/ants/Preparations_of_Ameisen_Data_2009-2017_pourWSL_22.03.2018_xlsx/Red_Wood_Ant_Mound_Occurence.RData')
+```
+
+```{r}
+RWAMO.Crd.Dist.tb <- select(RWAMO.tb, CLNR, RWAM.PA) %>%
+  filter(!is.na(RWAM.PA)) %>%
+    select(CLNR, RWAM.PA) %>%
+      left_join(y = RWAMPA.dist.tb, by = 'CLNR')
+```
+
+```{r}
+RWAMO.Crd.Dist.tb <- mutate(RWAMO.Crd.Dist.tb, 
+                            RWAM = case_when(RWAM.PA == 0 ~ 'Absent', 
+                                             RWAM.PA == 1 ~ 'Present')
+                     )
+```
+
+Examining the lattice of sampled locations:
+
+```{r}
+ideal.coords.tb <- readxl::read_excel(path = '~/rwa/data/NFI/Daten/Plotdaten und Baumdaten_2009-2017_abgeleitete Daten (Version 31.05.2018).xlsx') %>% 
+  select(CLNR, X, Y)
+```
+
+```{r}
+Grid.Section.tb <- select(ideal.coords.tb, X, Y) %>%
+  filter(7.25100e5 < X & X < 7.327501e5 & 1.14400e5 < Y & Y < 1.2200e5) %>%
+    mutate(X.rc = X - min(X), 
+           Y.rc = Y - min(Y)
+    )
+```
+
+```{r}
+ggplot(data = Grid.Section.tb, aes(x = X.rc, y = Y.rc)) + 
+  geom_point() + 
+  coord_equal()
+```
+
+Thus we can make a small complete section of the ideal grid as follows:
+
+```{r}
+outer.tb <- tibble(x1 = seq(from = 0, to = 1e4, by = 2000), 
+                   y1 = seq(from = 0, to = 1e4, by = 2000)
+            ) %>%
+              tidyr::expand(x1, y1) 
+
+inner.tb <- tibble(x1 = seq(from = 1000, to = 9000, by = 2000), 
+                   y1 = seq(from = 1000, to = 9000, by = 2000)
+            ) %>%
+              tidyr::expand(x1, y1)
+
+sample.tb <- bind_rows(outer.tb, inner.tb)
+```
+
+```{r}
+ggplot(data = sample.tb, aes(x = x1, y = y1)) + 
+  geom_point() + 
+  coord_equal() + 
+  scale_x_continuous(breaks = seq(from = 0, to = 1e4, by = 2e3)) + 
+  scale_y_continuous(breaks = seq(from = 0, to = 1e4, by = 2e3))
+```
+
+We can think about neighbourhood relationships on this lattice in terms of displacements from a focal location.
+
+```{r}
+mutate(sample.tb, 
+       X0 = x1 - 5e3,
+       Y0 = y1 - 5e3
+) %>% 
+  ggplot(data = ., aes(x = X0, y = Y0)) + 
+    geom_point() + 
+    coord_equal()
+```
+
+```{r}
+cent.sample.tb <- mutate(sample.tb, 
+                         X0 = x1 - 5e3,
+                         Y0 = y1 - 5e3,
+                         Displacement = sqrt(X0^2 + Y0^2)
+                  ) 
+
+ggplot(data = cent.sample.tb, aes(x = X0, y = Y0, fill = Displacement)) + 
+  geom_point(size = 3, shape = 21) + 
+  coord_equal() + 
+  scale_x_continuous(breaks = seq(from = -4e3, to = 4e4, by = 2e3)) + 
+  scale_y_continuous(breaks = seq(from = -4e3, to = 4e4, by = 2e3)) + 
+  scale_fill_continuous(type = 'viridis', option = 'C') +
+  labs(x = 'X', y = 'Y')
+```
+
+This is a rectangular grid (on a 45 degree angle from North) thus terms such as rook and queen neighbours and neighbourhood order all have meaning for this grid.
+
+Recall however that while placing plot centers on the vertices of this rectangular grid was the objective of the field survey, terrain features and so forth necessitated moving the plot centers in some cases.
+
+Thus we have distributions of distances between plot centres around each of the possible interpoint distances from the perfect grid.
+
+See for example the histogram below of all of the observed interpoint distances less than 6km:
+
+```{r}
+int.point.dist.hist.p <- dist(x = select(RWAMO.Crd.Dist.tb, X, Y) %>% 
+  as.matrix()) %>% 
+    as.vector() %>% 
+      tibble(dist = .) %>% 
+        filter(dist < (6e3)) %>% 
+          ggplot(aes(x = dist)) + 
+            geom_histogram() + 
+            theme_bw()
+
+int.point.dist.hist.p
+```
+
+We can also consider spatial neighbourhoods created by disk and ring buffers of increasing radii from a focal vertex in the grid.
+The shortest distance between points (on this ideal grid) follows the hypotenuse of a right angled triangle with short sides of lengths 1000m.
+
+```{r}
+sqrt(2*1000^2)
+```
+
+Consequently, the first order, rook neighbours of a focal observation (located at (0,0) in the graphic below) correspond to observations that are within 1415m of the focal observation (on the ideal grid):
+
+```{r}
+ggplot(data = cent.sample.tb, aes(x = X0, y = Y0, fill = Displacement <= 1415)) + 
+  geom_point(size = 3, shape = 21) + 
+  coord_equal() + 
+  scale_x_continuous(breaks = seq(from = -4e3, to = 4e4, by = 2e3)) + 
+  scale_y_continuous(breaks = seq(from = -4e3, to = 4e4, by = 2e3)) + 
+  scale_fill_manual(values = c('white', 'black')) + 
+  labs(x = 'X', y = 'Y') + 
+  theme_bw()
+```
+
+Returning to the distribution of observed distances between plot centers in the field we can see that the group of smallest interpoint distances are all close to this distance of 1415m and thus likely all correspond to distances between pairs of points which are first order, rook neighbours:
+```{r, fig.width = 9, fig.height = 9}
+int.point.dist.hist.p +
+  geom_vline(xintercept = 1415, colour = 'green', size = 0.75) + 
+  annotate(geom = 'text', angle = 90, x = 1415, y = 7500, label = '1415m')
+```
+
+The next shortest distance between points on the ideal grid is the horizontal/vertical distance between adjacent points: 2000m
+
+Interpoint distances less than or equal to 2000m correspond to first order, queen neighbours on the ideal grid:
+```{r}
+ggplot(data = cent.sample.tb, aes(x = X0, y = Y0, fill = Displacement <= 2000)) + 
+  geom_point(size = 3, shape = 21) + 
+  coord_equal() + 
+  scale_x_continuous(breaks = seq(from = -4e3, to = 4e4, by = 2e3)) + 
+  scale_y_continuous(breaks = seq(from = -4e3, to = 4e4, by = 2e3)) + 
+  scale_fill_manual(values = c('white', 'black')) + 
+  labs(x = 'X', y = 'Y') + 
+  scale_fill_manual(values = c('white', 'black')) + 
+  theme_bw()
+```
+
+Returning to the distribution of observed distances between plot centers in the field:
+
+```{r}
+int.point.dist.hist.p + 
+  geom_vline(xintercept = c(2000, 2400), colour = 'green', size = 0.75) +
+  annotate(geom = 'text', angle = 90, x = c(2000, 2400), y = 7500, label = c('2000m', '2400m'))
+```
+
+Thus there is a cluster of interpoint distances that are all less than 2400m.
+Examining the shape of the neighbourhood of points within 2400m of a focal point on the ideal grid:
+
+```{r}
+ggplot(data = cent.sample.tb, aes(x = X0, y = Y0, fill = Displacement <= 2400)) + 
+  geom_point(size = 3, shape = 21) + 
+  coord_equal() + 
+  scale_x_continuous(breaks = seq(from = -4e3, to = 4e4, by = 2e3)) + 
+  scale_y_continuous(breaks = seq(from = -4e3, to = 4e4, by = 2e3)) + 
+  scale_fill_manual(values = c('white', 'black')) + 
+  labs(x = 'X', y = 'Y') + 
+  scale_fill_manual(values = c('white', 'black')) + 
+  theme_bw()
+```
+
+Thus a neighbourhood defined by a displacement of less than 2.4km from the focal plot center will include the first order queen neighbours of the focal plot without including second order rook neighbours (on the ideal grid).
+
+The next cluster of displacement distances are all less than 3500m:
+
+```{r, fig.width = 9, fig.height = 9}
+int.point.dist.hist.p + 
+  geom_vline(xintercept = c(3500), colour = 'green', size = 0.75) + 
+  annotate(geom = 'text', angle = 90, x = c(3500), y = 7500, label = c('3500m'))
+```
+
+Plot centers within 3500m of the focal plot center include all first order neighbours of the focal plot and all second order neighbours of the focal plot except for the most distant of the second order queen neighbours (the corners of the square formed by the second order queen neighbours).
+
+```{r}
+ggplot(data = cent.sample.tb, aes(x = X0, y = Y0, fill = Displacement < 3500)) + 
+  geom_point(size = 3, shape = 21) + 
+  coord_equal() + 
+  scale_x_continuous(breaks = seq(from = -4e3, to = 4e4, by = 2e3)) + 
+  scale_y_continuous(breaks = seq(from = -4e3, to = 4e4, by = 2e3)) + 
+  scale_fill_manual(values = c('white', 'black')) + 
+  labs(x = 'X', y = 'Y') + 
+  scale_fill_manual(values = c('white', 'black')) + 
+  theme_bw()
+```
+
+The next cluster of interpoint distances are all less than 4750m from the plot center.
+
+```{r, fig.width = 9, fig.height = 9}
+int.point.dist.hist.p + 
+ geom_vline(xintercept = c(4750), colour = 'green', size = 0.75) + 
+ annotate(geom = 'text', angle = 90, x = c(4750), y = 7500, label = c('4750m'))
+```
+
+```{r}
+ggplot(data = cent.sample.tb, aes(x = X0, y = Y0, fill = Displacement < 4750)) + 
+  geom_point(size = 3, shape = 21) + 
+  coord_equal() + 
+  scale_x_continuous(breaks = seq(from = -4e3, to = 4e4, by = 2e3)) + 
+  scale_y_continuous(breaks = seq(from = -4e3, to = 4e4, by = 2e3)) + 
+  scale_fill_manual(values = c('white', 'black')) + 
+  labs(x = 'X', y = 'Y') + 
+  scale_fill_manual(values = c('white', 'black')) + 
+  theme_bw()
+```
+
+These clusters of interpoint distances (from the field data) have motivated me to test for spatial dependence within and beyond the following three threshold distances: 2400m, 3500m and 4750m.
+If I detect spatial dependence at displacements beyond 4750m I can examine larger thresholds.
+If I do not detect spatial dependence within displacements of 2400m I can test for spatial dependence between points separated by the smallest interpoint distance of 1415m.
+
+```{r, fig.width = 9, fig.height = 9}
+int.point.dist.hist.p + 
+  geom_vline(xintercept = c(2400, 3500, 4750), colour = 'green', size = 0.75) + 
+  annotate(geom = 'text', angle = 90, x = c(2400, 3500, 4750), y = 7500, label = c('2400m', '3500m', '4750m'))
+```
+
+## Test for Spatial Dependence with Various Neighbourhood Structures
+
+### Join Count Tests
+
+Join counts tests represent binary data as black and white and reference the 'colours' of joins (the shortest lines between pairs of points, if we adopt network terminology these lines are 'edges' and the locations of the observations are 'nodes').
+In our case an absence (`0`) would be represented as white while a presence (`1`) would be represented as black.
+Thus an edge between a pair of observations can connect any of three types of pairs of observations if we do not consider directed edges (black to black (BB), white to white (WW) or black to white (BW)).
+In the terminology of join count tests these correspond to three types of joins: BB, WW or BW.
+Positive spatial autocorrelation would thus correspond to a frequency of BW joins that is lower than that which we would expect by chance. 	   
+Conversely, negative spatial autocorrelation would correspond to a frequency of BW joins that is higher than that which we would expect by chance.
+We can perform permutational tests of join count frequency using the `spdep` package.
+This requires the creation of a neighbourhood matrix which in turn requires a choice of spatial weighting scheme for the neighbours.
+Here I will repeat this test for a variety of spatial neighbourhood structures and spatial neighbourhood weighting schemes.
+Given that the NFI plot centers only approximate a regular lattice I will use distance based neighbourhoods.
+Using neighbourhood structures defined by disk and ring buffers we can approximate rook and queen neighbourhood structures of different orders.
+I will compare three different neighbourhood weighting schemes: binary neighbourhood weights, inverse distance based weights and inverse squared distance based weights.
+Under a binary neighbourhood weighting scheme pairs of points either are neighbours and have neighbourhood weights of one or are not neighbours and have neighbourhood weights of zero.
+Under the combination of a distance based neighbourhood definintion and an inverse distance neighbourhood weighting scheme pairs of points that are separated by less than the threshold distance qualify as neighbours and have neighbourhood weights that are inversely proportional to the distances that separate these points.
+Under this combination of neighbourhood definition and neighbourhood weighting scheme points that are separated by a distance greater than the threshold are not neighbours and have neighbourhood weights of zero. 
+The combination of a distance based neighbourhood definintion and an inverse squared distance neighbourhood weighting scheme differs only from that just described in that it uses the inverse of the squared interpoint distances to calculate the neighbourhood weights of pairs of points that are separated by interpoint distances less than the threshold distance.
+
+Source the function I have written to perform permutational join count tests (with the `spdep` package) within neighbourhoods defined by user specified inner and outer radii and neighbourhood weighting schemes:
+
+```{r}
+source('./functions/b_mc_jct.R')
+```
+
+See Appendix for source code for this function.
+
+### Spatial Non-Stationarity and the Ensuing need for Regional Tests
+
+Looking at the plot of Red Wood Ant mound occurence data included below there are clearly regions of Swiss forests which lacked observations of the presence of Red Wood Ant mounds.
+Within these regions where only absences were observed we would find perfect spatial autocorrelation at any scale we chose to test the data (provided that scale fitted within the region).
+The relative densities of Red Wood Ant mound presences and absences also vary between regions where both presences and absences were observed.
+Compare for instance the densities of presences in the north west of the occurence map (Jura) to the far east of the occurence map (eastern Graubünden).
+Thus visual evidence suggests a non-stationary spatial dependence structure among these data.
+For this reason I will examine the spatial dependence structures in multiple regions within the full spatial extent of these data separately defining each region by eye based on areas of similar relative abundances of presences and absences.
+
+#### Overlaying points for Red Wood Ant Mound Presence/Absence onto Hillshaded Terrain
+
+```{r}
+relief.rast <- raster::raster('~/rwa/data/DEM/relief/Relief_1000_clip.tif')
+
+relief.rast
+
+relief.df <- data.frame(sp::coordinates(relief.rast))
+
+sp::coordinates(relief.df) ~x+y
+
+relief.crds <- sp::coordinates(relief.df)
+
+relief.tb <- tibble(X = relief.crds[,'x'],
+                    Y = relief.crds[,'y'], 
+                    relief = raster::extract(x = relief.rast, y = relief.df)
+             )
+
+RWAMO.tb.2 <- select(RWAMO.Crd.Dist.tb, CLNR, X, Y, RWAM.PA) %>%
+                mutate(Red.Wood.Ant.Mound = case_when(
+                                              RWAM.PA == 0 ~ 'Absent',
+                                              RWAM.PA == 1 ~ 'Present',
+                                              is.na(RWAM.PA) ~ 'Unknown'
+                                            ),
+                       Point.Size = case_when(
+                                      RWAM.PA == 0 ~ 1,
+                                      RWAM.PA == 1 ~ 2,
+                                      is.na(RWAM.PA) ~ 1.5
+                                    ),
+                       relief = 0
+              )
+```
+
+Overlaying the presence/absence of Red Wood Ant mounds in NFI plots onto a hillshaded terrain surface:
+```{r, fig.width = 12, fig.height = 9}
+rwam.pa.terrain.p <- ggplot(data = relief.tb, aes(x = X, y = Y, fill = relief)) +
+  geom_raster(alpha = 0.25) +
+  scale_fill_gradientn(colours = grey(level = seq(from = 0, to = 1, length.out = 1e3))) +
+  coord_equal() +  
+  geom_point(data = RWAMO.tb.2, aes(x = X, y = Y, shape = Red.Wood.Ant.Mound, colour = Red.Wood.Ant.Mound, size = Point.Size), alpha = 1) + 
+  scale_size(range = c(0.5,1)) +
+  scale_colour_brewer(type = 'qual', palette = 3) + 
+  guides(fill = FALSE,
+         size = FALSE,
+         shape = guide_legend(override.aes = list(size = 3))
+  ) +
+  labs(x = 'Easting', y = 'Northing', shape = 'Red Wood\nAnt Mounds', colour = 'Red Wood\nAnt Mounds') +
+  theme_bw() +
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  scale_y_continuous(labels = function(x) format(x, scientific = TRUE))
+
+rwam.pa.terrain.p
+```
+
+#### Hand drawing bounding polygons for regions of similar densities of presences:
+
+```{r, fig.width = 12, fig.height = 10}
+raster::plot(relief.rast, col = grey(level = seq(from = 0, to = 1, length.out = 1e3), alpha = 0.25), legend = FALSE)
+
+select(RWAMO.Crd.Dist.tb, CLNR, X, Y, RWAM.PA) %>%
+  filter(RWAM.PA == 0) %>%
+    with(., points(x = X, y = Y, pch = 16, col = '#7fbf7b', cex = 0.25))
+
+select(RWAMO.Crd.Dist.tb, CLNR, X, Y, RWAM.PA) %>%
+  filter(RWAM.PA == 1) %>%
+    with(., points(x = X, y = Y, pch = 17, col = '#762a83', cex = 0.5))
+```
+
+```{r, eval = FALSE}
+poly.1 <- raster::drawPoly(sp = TRUE, col = 'red')
+```
+
+```{r, eval = FALSE}
+poly.2 <- raster::drawPoly(sp = TRUE, col = 'blue')
+```
+
+```{r, eval = FALSE}
+poly.3 <- raster::drawPoly(sp = TRUE, col = 'green')
+```
+
+```{r, eval = FALSE}
+poly.4 <- raster::drawPoly(sp = TRUE, col = 'orange')
+```
+
+```{r, eval = FALSE}
+poly.5 <- raster::drawPoly(sp = TRUE, col = 'purple')
+```
+
+```{r, eval = FALSE}
+poly.6 <- raster::drawPoly(sp = TRUE, col = 'pink')
+```
+
+```{r, eval = FALSE}
+poly.7 <- raster::drawPoly(sp = TRUE, col = 'brown')
+```
+
+```{r, echo = FALSE}
+load('~/rwa/data/ants/ant_occurence_polygons/ant_occurence_polygons_v1.RData')
+```
+
+```{r}
+nfi.plots.sp <- SpatialPointsDataFrame(coords = select(RWAMO.Crd.Dist.tb, X, Y) %>% as.matrix(), data = select(RWAMO.Crd.Dist.tb, RWAM.PA))
+```
+
+```{r}
+Points.in.Polys.tb <- mutate(RWAMO.Crd.Dist.tb, 
+                             In.Poly.1 = over(x = nfi.plots.sp, y = poly.1),
+                             In.Poly.2 = over(x = nfi.plots.sp, y = poly.2),
+                             In.Poly.3 = over(x = nfi.plots.sp, y = poly.3),
+                             In.Poly.4 = over(x = nfi.plots.sp, y = poly.4),
+                             In.Poly.5 = over(x = nfi.plots.sp, y = poly.5),
+                             In.Poly.6 = over(x = nfi.plots.sp, y = poly.6),
+                             In.Poly.7 = over(x = nfi.plots.sp, y = poly.7)
+                      )
+```
+
+```{r, fig.width = 12, fig.height = 10}
+raster::plot(relief.rast, col = grey(level = seq(from = 0, to = 1, length.out = 1e3), alpha = 0.25), legend = FALSE)
+
+select(RWAMO.Crd.Dist.tb, CLNR, X, Y, RWAM.PA) %>%
+  filter(RWAM.PA == 0) %>%
+    with(., points(x = X, y = Y, pch = 16, col = 'darkgrey', cex = 0.25))
+
+select(RWAMO.Crd.Dist.tb, CLNR, X, Y, RWAM.PA) %>%
+  filter(RWAM.PA == 1) %>%
+    with(., points(x = X, y = Y, pch = 17, col = 'black', cex = 0.5))
+
+Dark2.c7 <- c('#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02', '#a6761d')
+
+plot(x = poly.1, border = Dark2.c7[1], add = TRUE, col = NA, lwd = 2)
+plot(x = poly.2, border = Dark2.c7[2], add = TRUE, col = NA, lwd = 2)
+plot(x = poly.3, border = Dark2.c7[3], add = TRUE, col = NA, lwd = 2)
+plot(x = poly.4, border = Dark2.c7[4], add = TRUE, col = NA, lwd = 2)
+plot(x = poly.5, border = Dark2.c7[5], add = TRUE, col = NA, lwd = 2)
+plot(x = poly.6, border = Dark2.c7[6], add = TRUE, col = NA, lwd = 2)
+plot(x = poly.7, border = Dark2.c7[7], add = TRUE, col = NA, lwd = 2)
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.1) & RWAM.PA == 0) %>%
+  with(., points(x = X, y = Y, pch = 16, col = Dark2.c7[1], cex = 0.25))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.1) & RWAM.PA == 1) %>%
+  with(., points(x = X, y = Y, pch = 17, col = Dark2.c7[1], cex = 0.50))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.2) & RWAM.PA == 0) %>%
+  with(., points(x = X, y = Y, pch = 16, col = Dark2.c7[2], cex = 0.25))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.2) & RWAM.PA == 1) %>%
+  with(., points(x = X, y = Y, pch = 17, col = Dark2.c7[2], cex = 0.50))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.3) & RWAM.PA == 0) %>%
+  with(., points(x = X, y = Y, pch = 16, col = Dark2.c7[3], cex = 0.25))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.3) & RWAM.PA == 1) %>%
+  with(., points(x = X, y = Y, pch = 17, col = Dark2.c7[3], cex = 0.50))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.4) & RWAM.PA == 0) %>%
+  with(., points(x = X, y = Y, pch = 16, col = Dark2.c7[4], cex = 0.25))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.4) & RWAM.PA == 1) %>%
+  with(., points(x = X, y = Y, pch = 17, col = Dark2.c7[4], cex = 0.50))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.5) & RWAM.PA == 0) %>%
+  with(., points(x = X, y = Y, pch = 16, col = Dark2.c7[5], cex = 0.25))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.5) & RWAM.PA == 1) %>%
+  with(., points(x = X, y = Y, pch = 17, col = Dark2.c7[5], cex = 0.50))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.6) & RWAM.PA == 0) %>%
+  with(., points(x = X, y = Y, pch = 16, col = Dark2.c7[6], cex = 0.25))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.6) & RWAM.PA == 1) %>%
+  with(., points(x = X, y = Y, pch = 17, col = Dark2.c7[6], cex = 0.50))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.7) & RWAM.PA == 0) %>%
+  with(., points(x = X, y = Y, pch = 16, col = Dark2.c7[7], cex = 0.25))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.7) & RWAM.PA == 1) %>%
+  with(., points(x = X, y = Y, pch = 17, col = Dark2.c7[7], cex = 0.50))
+
+legend(x = 7.75e5, 
+       y = 2.95e5, 
+       legend = c('Polygon 1', 'Polygon 2', 'Polygon 3', 'Polygon 4', 'Polygon 5', 'Polygon 6', 'Polygon 7'), 
+       col = Dark2.c7,
+       lwd = 1.5)
+
+legend(x = 7.75e5, 
+       y = 2.35e5, 
+       legend = c('Presence', 'Absence'),
+       col = 'black',
+       pch = c(17,16)
+)
+```
+
+#### Testing the Range of Spatial Dependence in Polygon 1
+
+```{r}
+Points.in.1st.Poly.tb <- filter(Points.in.Polys.tb, !is.na(In.Poly.1) & !is.na(RWAM.PA)) %>%
+  mutate(RWAM = case_when(RWAM.PA == 0 ~ 'Absent', 
+                          RWAM.PA == 1 ~ 'Present')
+  ) %>%
+    select(CLNR, RWAM, X, Y)
+```
+
+```{r, fig.width = 12, fig.height = 10}
+raster::plot(x = raster::crop(x = relief.rast, y = raster::extent(poly.1) + c(-100, 100, -100, 100)), col = grey(level = seq(from = 0, to = 1, length.out = 1e3), alpha = 0.25), legend = FALSE)
+
+plot(x = poly.1, border = Dark2.c7[1], add = TRUE, col = NA, lwd = 2)
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.1) & RWAM.PA == 0) %>%
+  with(., points(x = X, y = Y, pch = 16, col = Dark2.c7[1], cex = 1))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.1) & RWAM.PA == 1) %>%
+  with(., points(x = X, y = Y, pch = 17, col = Dark2.c7[1], cex = 1.5))
+```
+
+The majority of the first order queen neighbours will lie within 2.4km of focal point (this still excludes both rook and queen second order neighbours)
+
+```{r}
+ggplot(data = cent.sample.tb, aes(x = X0, y = Y0, fill = Displacement <= 2400)) + 
+   geom_point(size = 3, shape = 21) + 
+   coord_equal() + 
+   scale_x_continuous(breaks = seq(from = -4e3, to = 4e4, by = 2e3)) + 
+   scale_y_continuous(breaks = seq(from = -4e3, to = 4e4, by = 2e3)) + 
+   scale_fill_manual(values = c('white', 'black')) + 
+   labs(x = 'X', y = 'Y') + 
+   theme_bw()
+```
+
+Tests for spatial dependence within threshold distances:
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 2400, crds = select(Points.in.1st.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.1st.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 3500, crds = select(Points.in.1st.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.1st.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 4750, crds = select(Points.in.1st.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.1st.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+Tests for spatial dependence beyond threshold distances:
+
+Binary weights over these distances do not make sense biologically in this context.
+
+```{r}
+system.time(db.mc.jct(in.rad = 2400, out.rad = 1.5e5, crds = select(Points.in.1st.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.1st.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 3500, out.rad = 1.5e5, crds = select(Points.in.1st.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.1st.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 4750, out.rad = 1.5e5, crds = select(Points.in.1st.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.1st.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+#### Testing the Range of Spatial Dependence in Polygon 2
+
+```{r}
+Points.in.2nd.Poly.tb <- filter(Points.in.Polys.tb, !is.na(In.Poly.2) & !is.na(RWAM.PA)) %>%
+  mutate(RWAM = case_when(RWAM.PA == 0 ~ 'Absent', 
+                          RWAM.PA == 1 ~ 'Present')
+  ) %>%
+    select(CLNR, RWAM, X, Y)
+```
+
+```{r, fig.width = 12, fig.height = 10}
+raster::plot(x = raster::crop(x = relief.rast, y = raster::extent(poly.2) + c(-100, 100, -100, 100)), col = grey(level = seq(from = 0, to = 1, length.out = 1e3), alpha = 0.25), legend = FALSE)
+
+plot(x = poly.2, border = Dark2.c7[2], add = TRUE, col = NA, lwd = 2)
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.2) & RWAM.PA == 0) %>%
+  with(., points(x = X, y = Y, pch = 16, col = Dark2.c7[2], cex = 1))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.2) & RWAM.PA == 1) %>%
+  with(., points(x = X, y = Y, pch = 17, col = Dark2.c7[2], cex = 1.5))
+```
+
+Tests for spatial dependence within threshold distances:
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 2400, crds = select(Points.in.2nd.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.2nd.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 3500, crds = select(Points.in.2nd.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.2nd.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 4750, crds = select(Points.in.2nd.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.2nd.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+Tests for spatial dependence beyond threshold distances:
+
+```{r}
+system.time(db.mc.jct(in.rad = 2400, out.rad = 1.5e5, crds = select(Points.in.2nd.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.2nd.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 3500, out.rad = 1.5e5, crds = select(Points.in.2nd.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.2nd.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 4750, out.rad = 1.5e5, crds = select(Points.in.2nd.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.2nd.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+#### Testing Range of Spatial Dependence in Polygon 3
+
+```{r}
+Points.in.3rd.Poly.tb <- filter(Points.in.Polys.tb, !is.na(In.Poly.3) & !is.na(RWAM.PA)) %>%
+  mutate(RWAM = case_when(RWAM.PA == 0 ~ 'Absent', 
+                          RWAM.PA == 1 ~ 'Present')
+  ) %>%
+    select(CLNR, RWAM, X, Y)
+```
+
+```{r, fig.width = 12, fig.height = 10}
+raster::plot(x = raster::crop(x = relief.rast, y = raster::extent(poly.3) + c(-100, 100, -100, 100)), col = grey(level = seq(from = 0, to = 1, length.out = 1e3), alpha = 0.25), legend = FALSE)
+
+plot(x = poly.3, border = Dark2.c7[3], add = TRUE, col = NA, lwd = 2)
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.3) & RWAM.PA == 0) %>%
+  with(., points(x = X, y = Y, pch = 16, col = Dark2.c7[3], cex = 1))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.3) & RWAM.PA == 1) %>%
+  with(., points(x = X, y = Y, pch = 17, col = Dark2.c7[3], cex = 1.5))
+```
+
+Tests for spatial dependence within threshold distances:
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 2400, crds = select(Points.in.3rd.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.3rd.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 3500, crds = select(Points.in.3rd.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.3rd.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 4750, crds = select(Points.in.3rd.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.3rd.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+Tests for spatial dependence beyond threshold distances:
+
+```{r}
+system.time(db.mc.jct(in.rad = 2400, out.rad = 1.5e5, crds = select(Points.in.3rd.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.3rd.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 3500, out.rad = 1.5e5, crds = select(Points.in.3rd.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.3rd.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 4750, out.rad = 1.5e5, crds = select(Points.in.3rd.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.3rd.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+#### Testing Range of Spatial Dependence in Polygon 4
+
+```{r}
+Points.in.4th.Poly.tb <- filter(Points.in.Polys.tb, !is.na(In.Poly.4) & !is.na(RWAM.PA)) %>%
+  mutate(RWAM = case_when(RWAM.PA == 0 ~ 'Absent', 
+                          RWAM.PA == 1 ~ 'Present')
+  ) %>%
+    select(CLNR, RWAM, X, Y)
+```
+
+```{r, fig.width = 12, fig.height = 10}
+raster::plot(x = raster::crop(x = relief.rast, y = raster::extent(poly.4) + c(-100, 100, -100, 100)), col = grey(level = seq(from = 0, to = 1, length.out = 1e3), alpha = 0.25), legend = FALSE)
+
+plot(x = poly.4, border = Dark2.c7[4], add = TRUE, col = NA, lwd = 2)
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.4) & RWAM.PA == 0) %>%
+  with(., points(x = X, y = Y, pch = 16, col = Dark2.c7[4], cex = 1))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.4) & RWAM.PA == 1) %>%
+  with(., points(x = X, y = Y, pch = 17, col = Dark2.c7[4], cex = 1.5))
+```
+
+Tests for spatial dependence within threshold distances:
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 2400, crds = select(Points.in.4th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.4th.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 3500, crds = select(Points.in.4th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.4th.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 4750, crds = select(Points.in.4th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.4th.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+Tests for spatial dependence beyond threshold distances:
+
+```{r}
+system.time(db.mc.jct(in.rad = 2400, out.rad = 1.5e5, crds = select(Points.in.4th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.4th.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 3500, out.rad = 1.5e5, crds = select(Points.in.4th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.4th.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 4750, out.rad = 1.5e5, crds = select(Points.in.4th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.4th.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+#### Testing Range of Spatial Dependence in Polygon 5
+
+```{r}
+Points.in.5th.Poly.tb <- filter(Points.in.Polys.tb, !is.na(In.Poly.5) & !is.na(RWAM.PA)) %>%
+  mutate(RWAM = case_when(RWAM.PA == 0 ~ 'Absent', 
+                          RWAM.PA == 1 ~ 'Present')
+  ) %>%
+    select(CLNR, RWAM, X, Y)
+```
+
+```{r, fig.width = 12, fig.height = 10}
+raster::plot(x = raster::crop(x = relief.rast, y = raster::extent(poly.5) + c(-100, 100, -100, 100)), col = grey(level = seq(from = 0, to = 1, length.out = 1e3), alpha = 0.25), legend = FALSE)
+
+plot(x = poly.5, border = Dark2.c7[5], add = TRUE, col = NA, lwd = 2)
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.5) & RWAM.PA == 0) %>%
+  with(., points(x = X, y = Y, pch = 16, col = Dark2.c7[5], cex = 1))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.5) & RWAM.PA == 1) %>%
+  with(., points(x = X, y = Y, pch = 17, col = Dark2.c7[5], cex = 1.5))
+```
+
+Tests for spatial dependence withn threshold distances:
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 2400, crds = select(Points.in.5th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.5th.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 3500, crds = select(Points.in.5th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.5th.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 4750, crds = select(Points.in.5th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.5th.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+Tests for spatial dependence beyond threshold distances:
+
+```{r}
+system.time(db.mc.jct(in.rad = 2400, out.rad = 1.5e5, crds = select(Points.in.5th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.5th.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 3500, out.rad = 1.5e5, crds = select(Points.in.5th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.5th.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 4750, out.rad = 1.5e5, crds = select(Points.in.5th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.5th.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+#### Testing Range of Spatial Dependence in Polygon 6
+
+```{r}
+Points.in.6th.Poly.tb <- filter(Points.in.Polys.tb, !is.na(In.Poly.6) & !is.na(RWAM.PA)) %>%
+  mutate(RWAM = case_when(RWAM.PA == 0 ~ 'Absent', 
+                          RWAM.PA == 1 ~ 'Present')
+  ) %>%
+    select(CLNR, RWAM, X, Y)
+```
+
+```{r, fig.width = 12, fig.height = 10}
+raster::plot(x = raster::crop(x = relief.rast, y = raster::extent(poly.6) + c(-100, 100, -100, 100)), col = grey(level = seq(from = 0, to = 1, length.out = 1e3), alpha = 0.25), legend = FALSE)
+
+plot(x = poly.6, border = Dark2.c7[6], add = TRUE, col = NA, lwd = 2)
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.6) & RWAM.PA == 0) %>%
+  with(., points(x = X, y = Y, pch = 16, col = Dark2.c7[6], cex = 1))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.6) & RWAM.PA == 1) %>%
+  with(., points(x = X, y = Y, pch = 17, col = Dark2.c7[6], cex = 1.5))
+```
+
+Testing for Spatial Dependence within threshold distances:
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 2400, crds = select(Points.in.6th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.6th.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 3500, crds = select(Points.in.6th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.6th.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 4750, crds = select(Points.in.6th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.6th.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+Testing for Spatial Dependence beyond threshold distances:
+
+```{r}
+system.time(db.mc.jct(in.rad = 2400, out.rad = 1.5e5, crds = select(Points.in.6th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.6th.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 3500, out.rad = 1.5e5, crds = select(Points.in.6th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.6th.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 4750, out.rad = 1.5e5, crds = select(Points.in.6th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.6th.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+#### Testing Range of Spatial Dependence in Polygon 7
+
+```{r}
+Points.in.7th.Poly.tb <- filter(Points.in.Polys.tb, !is.na(In.Poly.7) & !is.na(RWAM.PA)) %>%
+  mutate(RWAM = case_when(RWAM.PA == 0 ~ 'Absent', 
+                          RWAM.PA == 1 ~ 'Present')
+  ) %>%
+    select(CLNR, RWAM, X, Y)
+```
+
+```{r, fig.width = 12, fig.height = 10}
+raster::plot(x = raster::crop(x = relief.rast, y = raster::extent(poly.7) + c(-100, 100, -100, 100)), col = grey(level = seq(from = 0, to = 1, length.out = 1e3), alpha = 0.25), legend = FALSE)
+
+plot(x = poly.7, border = Dark2.c7[7], add = TRUE, col = NA, lwd = 2)
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.7) & RWAM.PA == 0) %>%
+  with(., points(x = X, y = Y, pch = 16, col = Dark2.c7[7], cex = 1))
+
+filter(Points.in.Polys.tb, !is.na(In.Poly.7) & RWAM.PA == 1) %>%
+  with(., points(x = X, y = Y, pch = 17, col = Dark2.c7[7], cex = 1.5))
+```
+
+Testing for Spatial Dependence within threshold distances:
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 2400, crds = select(Points.in.7th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.7th.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 3500, crds = select(Points.in.7th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.7th.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 0, out.rad = 4750, crds = select(Points.in.7th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.7th.Poly.tb$RWAM, nb.wght.schm = c('B', 'ID', 'IDS'), n.perm = 1e4))
+```
+
+Testing for Spatial Dependence beyond threshold distances:
+
+```{r}
+system.time(db.mc.jct(in.rad = 2400, out.rad = 1.5e5, crds = select(Points.in.7th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.7th.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 3500, out.rad = 1.5e5, crds = select(Points.in.7th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.7th.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+```{r}
+system.time(db.mc.jct(in.rad = 4750, out.rad = 1.5e5, crds = select(Points.in.7th.Poly.tb, X, Y) %>% as.matrix(), rsp = Points.in.7th.Poly.tb$RWAM, nb.wght.schm = c('ID', 'IDS'), n.perm = 1e4))
+```
+
+### Final Decision
+
+In all seven of the regions tested above the tests for spatial dependence failed to reject the null hypothesis of spatial indepence for points separated by more than 3500m.
+
+Ploting the NFI plots that were searched for Red Wood Ant mounds with lines connecting the coordinates of plot centrois of pairs of plots which are judged to be neighbours by this definition (i.e. plots with centers that were separated by less than 3500m).
+Neighbourhood weights are represented by the colour of the lines joining the coordinates of plot centroids.
+
+```{r}
+nb.3500 <- dnearneigh(x = select(RWAMO.Crd.Dist.tb, X, Y) %>% as.matrix(), d1 = 0, d2 = 3500, row.names = NULL, longlat = NULL, bounds=c("GT", "LE"))
+
+nb.3500.lstw <- nb2listw(neighbours = nb.3500, zero.policy = TRUE)
+
+nb.dsts.3500 <- nbdists(nb = nb.3500, coords = select(RWAMO.Crd.Dist.tb, X, Y) %>% as.matrix())
+```
+
+Using the definition that points are neighbours if they are within 3500m of each other and colouring by an inverse distance weighting scheme:
+
+```{r, fig.width = 12, fig.height = 9}
+inv.dst.weights <- lapply(nb.dsts.3500, function(x) 1/(x/1000))
+
+inv.dst.lstw <- nb2listw(neighbours = nb.3500, glist = inv.dst.weights, style = 'B', zero.policy = TRUE)
+
+ID.3500.nb.spldf <- listw2lines(listw = inv.dst.lstw, coords = select(RWAMO.Crd.Dist.tb, X, Y) %>% as.matrix())
+
+ID.3500.nb.sf <- st_as_sf(x = ID.3500.nb.spldf)
+
+ggplot() + 
+  geom_sf(data = ID.3500.nb.sf %>% arrange(wt), aes(col = wt)) + 
+  scale_colour_continuous(type = 'viridis', direction = -1, limits = c(0,1)) + 
+  labs(x = 'Easting', y = 'Northing', colour = 'Neighbourhood\nWeight', title = '3.5km neighbourhoods & Inverse Distance Weighting Scheme') + 
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  scale_y_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  theme_bw()
+```
+
+Using the definition that points are neighbours if they are within 3500m of each other and colouring by an inverse squared distance weighting scheme:
+
+```{r, fig.width = 12, fig.height = 9}
+inv.sqr.dst.weights <- lapply(nb.dsts.3500, function(x) 1/((x/1000)^2))
+
+inv.sqr.dst.lstw <- nb2listw(neighbours = nb.3500, glist = inv.sqr.dst.weights, style = 'B', zero.policy = TRUE)
+
+ID.3500.nb.inv.sqr.spldf <- listw2lines(listw = inv.sqr.dst.lstw, coords = select(RWAMO.Crd.Dist.tb, X, Y) %>% as.matrix())
+
+ID.3500.nb.inv.sqr.sf <- st_as_sf(x = ID.3500.nb.inv.sqr.spldf)
+
+ggplot() + 
+  geom_sf(data = ID.3500.nb.inv.sqr.sf %>% arrange(wt), aes(col = wt)) + 
+  scale_colour_continuous(type = 'viridis', direction = -1, limits = c(0,1)) + 
+  labs(x = 'Easting', y = 'Northing', colour = 'Neighbourhood\nWeight', title = '3.5km neighbourhoods & Inverse Squared Distance Weighting Scheme') +
+  scale_x_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  scale_y_continuous(labels = function(x) format(x, scientific = TRUE)) +
+  theme_bw()
+```
+
+## Partioning Data for Cross Validation
+
+I used the functions `chull_partitioner( )` and `pairs_chull_partitioner( )` to partition the data for cross validation.
+The appendix contains the source code for these functions.
+Using the result of my investigation of the range of spatial dependence among the Red Wood Ant mound occurrence data I set the exclusion buffers to be 3.5km wide.
+I was able to avoid intersections between the regions bounding different validation sets by running these functions on subsets of the observations contained within hand drawn polygons on the study area.
+By experimenting with different starting locations, pairs of starting locations and polygons around these starting locations I arrived at the following set of 10 divisions of the data into training and validation sets (and exclusion buffers where necessary).
+
+```{r}
+load('~/rwa/data/data_partitions/10_data_partitions.RData')
+```
+
+```{r, fig.width = 12, fig.height = 9}
+CV.Partitions.plot <- ggplot(data = CV.Partitions.tb, aes(x = X, y = Y, colour = Set)) + 
+  geom_point() +
+  coord_equal() +
+  facet_wrap(~Division.ID.ro) + 
+  scale_colour_manual(values = c('#d95f02', '#1b9e77', '#7570b3')) + 
+  labs(x = '', y = '')
+
+CV.Partitions.plot
+```
+
+```{r, eval = FALSE, echo = FALSE}
+ggsave(filename = '~/rwa/data/data_partitions/10_data_partitions.pdf', plot = CV.Partitions.plot)
+```
+
+Partitions 1 to 9 each divided the data into training and validation sets that contained approximately 90% and 10% of the data respectively.  I retained Division 10 to improve the coverage of the study area by validation sets.  Each training and validation set thus identified contained a ratio of precences to absences very similar to that of the full data set (~4.8% presences).
+
+```{r}
+group_by(CV.Partitions.tb, Division.ID.ro, Set) %>%
+  summarise(Prct.Presence = round(100*sum(RWAM.PA == 1)/n(),2), Prct.Obs = round(100*n()/nrow(RWAMO.tb),2)) %>% 
+    filter(!(Set == 'Buffer')) %>% 
+      knitr::kable()  
+```
+
+I combine different pairs of these validation sets and use each pair as a single validation set in order to approxiamte 80:20 partitions in the cross validation.
+
+## Appendix
+
+Source code for functions used in this file.
+
+```{r, code=readLines('./functions/b_mc_jct.R')}
+```
+
+```{r, code=readLines('./functions/chull_partitioner.R')}
+```
+
+```{r, code=readLines('./functions/pairs_chull_partitioner.R')}
+```
+
+## References
+
+Bivand, R. S., Pebesma, E., & Gómez-Rubio, V. (2013). Applied Spatial Data Analysis with R (2nd ed.). New York: Springer.
+
+Roberts, D. R., Bahn, V., Ciuti, S., Boyce, M. S., Elith, J., Guillera-Arroita, G., … Dormann, C. F. (2017). Cross-validation strategies for data with temporal, spatial, hierarchical, or phylogenetic structure. Ecography, 40(8), 913–929.[https://doi.org/10.1111/ecog.02881]

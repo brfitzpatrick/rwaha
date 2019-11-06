@@ -1,0 +1,381 @@
+---
+title: "S4 Preparation of Digital Elevation Model Derived Data"
+author: "Author Blank for Double Blind Peer Review"
+output: html_notebook
+---
+
+## Introduction
+
+In this file I prepare summary statistics for Digital Elevation Model (DEM) products.
+The DEM used to calculate these products has a 5m resolution having been resampled with ArcGIS 10.5 from the SwissAlti3D 2m resolution DEM ([Swisstopo: Höhenmodelle](https://shop.swisstopo.admin.ch/en/products/height_models/alti3D)).
+These summary statistics were calculated by Andri for the values of the pixels of these DEM products that intersected a 12.5m radius disk buffer centered on the coordinates of the centroid of each of the NFI Plots.
+
+The column names in our data files that contain the DEM products are explained in the table below.
+
+| Column Name              |  DEM Product                            |
+|:-------------------------|----------------------------------------:|
+|cellBal_D8                | Cell Balance                            |
+|curv_plan                 | Plan Curvature                          |
+|curv_prof                 | Profile Curvature                       |
+|dem_5m_clip_master        | Elevation                               |
+|dissection3x3             | Martonne’s Modified Dissection          |
+|eastness                  | Eastnest                                |
+|flowAcc_MF                | Flow Accumulation (multiflow algorithm) |
+| globalRad_5m             | Global Potential Radiation              |
+|heatload                  | Heatload                                |
+|mass_bal_index            | Mass Balance Index                      |
+|melton_rug                | Melton Ruggedness Number                |
+|moisture_index            | Integrated Moisture Index               |
+|northness                 | Northness                               |
+|roughness3x3              | Roughness                               |
+|site_exp                  | Site Exposure                           |
+|slpM0                     | Slope                                   |
+|tpi0_12                   | Topographic Position Index              |
+|TWI_SAGA                  | Topographic Wetness Index               |
+|valleydepth               | Valley Depth                            |
+
+The summary statistics calculated for the pixel values within each buffer are given in the table below.
+
+| Acronymn  | Summary Statistic  |
+|----------:|-------------------:|
+| min       | Minimum            |
+| q25       | First quartile     |
+| mean      | Mean               |
+| median    | Median             |
+| q75       | Third quartile     |
+| max       | Maximum            |
+| std       | Standard Deviation |
+| Morans_I  | Moran's I          | 
+
+## Loading the packages I will use:
+
+```{r message=FALSE, warning=FALSE}
+library(readxl)
+library(visdat)
+library(tidyverse)
+```
+
+## Reading in the Ants Data
+
+Reading in the prepared data for the occurence of ant mounds.
+With these data I will check that we have each of the DEM product summaries for all buffer sizes at all NFI plots that were searched for ants.
+I will also subset the DEM product summaries to those calculated for the NFI plots that were searched for ant mounds.
+
+```{r}
+load('~/rwa/data/ants/Preparations_of_Ameisen_Data_2009-2017_pourWSL_22.03.2018_xlsx/Red_Wood_Ant_Mound_Occurence.RData')
+```
+
+Creating a tibble of CLNR (plots identifiers) that were Searched For Ant Mounds
+```{r}
+CLNR.SFAM.tb <- select(RWAMO.tb, CLNR)
+```
+
+I received the summaries of the global potential radiation raster as separate files (because the global potential radiation raster had to be calculated from a DEM for this project).
+Consequently, I first read in the majority of the DEM product summaries from one file and then read in the global potential radition summaries from another file.
+Some of the plots that were searched for ant mounds were absent from the files of summary statistics of the global potential radiation pixel values in particular buffer sizes.
+These missing values have been provided as additional files which I read in and join on where appropriate.
+
+When he provided these data, Andri also alerted me to the fact that some CLNR have missing values for some of the Moran's I statistics.
+These missing values arrise when there is no variation among the pixel values of a particular DEM product within a buffer.
+To calculate Moran's I for the pixel values in a buffer there needs to be some variance among these pixel values.
+While we cannot calculate a Moran's I value in these situations, all of the pixels having identical values is closer to the situation of perfect spatial dependence than the situation of perfect spatial independece (e.g. if we had a chess board patten among the pixels) so we have decided to recode these missing values to have values of `1`.
+
+### 12.5m Disk Buffer Summaries
+
+The following chunk: 
+
+ * Reads in the set of DEM product summary statistics for the 12.5m disk buffers, 
+ * subsets these data to the columns containing the plot identifier (`CLNR`) and the summary statistics for all DEM products,
+ * subsets these data to the rows containing observation of plots that were searched for ant mounds and
+ * adds a suffix to the column names of the columns containing these summary statistics that identifies these summary statistics as having been calculated for the 12.5m radius disk buffers.
+
+```{r}
+dem.bs.12.5.tb <- read_excel(path = '~/rwa/data/dtm_buffer_summaries/_Tables/Buffer12mDisc.xlsx') %>%
+  select(matches('^CLNR$|\\_min$|\\_q25$|\\_mean$|\\_median$|\\_q75$|\\_max$|\\_std$|\\_Morans_I$')) %>%
+    right_join(x = ., y = CLNR.SFAM.tb, by = 'CLNR') %>%
+      rename_at(.tbl = ., .vars = vars(-CLNR), .funs = function(x) paste0(x,'_12m'))
+```
+
+Check that all summary statistics for all 18 DEM products (plus the DEM values themselves) are present:
+
+```{r}
+cellBal_D8.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'cellBal\\_D8') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'cellBal\\_D8\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+curv_plan.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'curv\\_plan') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'curv\\_plan\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+curv_prof.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'curv\\_prof') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'curv\\_prof\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+dem_5m_clip_master.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'dem\\_5m\\_clip\\_master') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'dem\\_5m\\_clip\\_master\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+dissection3x3.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'dissection3x3') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'dissection3x3\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+eastness.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'eastness') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'eastness\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+flowAcc_MF.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'flowAcc\\_MF') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'flowAcc\\_MF\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+heatload.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'heatload') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'heatload\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+mass_bal_index.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'mass\\_bal\\_index') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'mass\\_bal\\_index\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+melton_rug.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'melton\\_rug') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'melton\\_rug\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+moisture_index.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'moisture\\_index') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'moisture\\_index\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+northness.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'northness') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'northness\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+roughness3x3.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'roughness3x3') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'roughness3x3\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+site_exp.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'site\\_exp') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'site\\_exp\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+slpM0.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'slpM0') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'slpM0\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+tpi0_12.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'tpi0\\_12') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'tpi0\\_12\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+TWI_SAGA.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'TWI\\_SAGA') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'TWI\\_SAGA\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+valleydepth.12.5m.ss <- str_subset(string = colnames(dem.bs.12.5.tb), pattern = 'valleydepth') %>%
+  tibble(c.names = .) %>%
+    separate(col = c.names, into = c('part.1', 'part.2', 'part.3'), sep = 'valleydepth\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort()
+```
+
+```{r}
+stat.list.12.5 <- list(cellBal_D8.12.5m.ss,
+                       curv_plan.12.5m.ss,
+                       curv_prof.12.5m.ss,
+                       dem_5m_clip_master.12.5m.ss,
+                       dissection3x3.12.5m.ss,
+                       eastness.12.5m.ss,
+                       flowAcc_MF.12.5m.ss,
+                       heatload.12.5m.ss,
+                       mass_bal_index.12.5m.ss,
+                       melton_rug.12.5m.ss,
+                       moisture_index.12.5m.ss,
+                       northness.12.5m.ss,
+                       roughness3x3.12.5m.ss,
+                       site_exp.12.5m.ss,
+                       slpM0.12.5m.ss,
+                       tpi0_12.12.5m.ss,
+                       TWI_SAGA.12.5m.ss,
+                       valleydepth.12.5m.ss)
+
+names(stat.list.12.5) <- c('cellBal_D8.12.5m.ss',
+                           'curv_plan.12.5m.ss',
+                           'curv_prof.12.5m.ss',
+                           'dem_5m_clip_master.12.5m.ss',
+                           'dissection3x3.12.5m.ss',
+                           'eastness.12.5m.ss',
+                           'flowAcc_MF.12.5m.ss',
+                           'heatload.12.5m.ss',
+                           'mass_bal_index.12.5m.ss',
+                           'melton_rug.12.5m.ss',
+                           'moisture_index.12.5m.ss',
+                           'northness.12.5m.ss',
+                           'roughness3x3.12.5m.ss',
+                           'site_exp.12.5m.ss',
+                           'slpM0.12.5m.ss',
+                           'tpi0_12.12.5m.ss',
+                           'TWI_SAGA.12.5m.ss',
+                           'valleydepth.12.5m.ss')
+
+map_lgl(.x = stat.list.12.5, .f = identical, y = cellBal_D8.12.5m.ss) %>%
+  summary()
+```
+
+Check for missing data:
+
+```{r}
+anyNA(dem.bs.12.5.tb)
+```
+
+Visualise the pattern of missing observations in the variables that contain one or more missing values:
+
+```{r, fig.width = 12, fig.height = 9}
+select_if(dem.bs.12.5.tb, anyNA) %>%
+  vis_miss(cluster = TRUE, sort_miss = FALSE) + theme(axis.text.x = element_text(angle = 90, vjust = 1))
+```
+
+The variables that contain one or more missing observation are all Moran's I values for different DEM products.
+```{r}
+dem.bs.12.5.cn.na <- select_if(dem.bs.12.5.tb, anyNA) %>% colnames()
+
+dem.bs.12.5.cn.na
+```
+
+Replacing these missing values with the value `1` as discussed above:
+
+```{r}
+na.replace.values.list.12.5m <- as.list(rep(x = 1, times = length(dem.bs.12.5.cn.na)))
+
+names(na.replace.values.list.12.5m) <- dem.bs.12.5.cn.na
+
+dem.bs.12.5.tb <- replace_na(data = dem.bs.12.5.tb, replace = na.replace.values.list.12.5m)
+
+anyNA(dem.bs.12.5.tb)
+```
+
+Read in the set of global potential radiation summaries for the 12.5m disk buffers:
+
+```{r}
+gpr.bs.12.5.tb <- read_excel(path = '~/rwa/data/dtm_buffer_summaries/Global_Potential_Radiation/Buffer12mDisc.xlsx') %>%
+  select(matches('^CLNR$|\\_min$|\\_q25$|\\_mean$|\\_median$|\\_q75$|\\_max$|\\_std$|\\_Morans_I$')) %>%
+    right_join(x = ., y = CLNR.SFAM.tb, by = 'CLNR') %>%
+      rename_at(.tbl = ., .vars = vars(-CLNR), .funs = function(x) paste0(x,'_12m'))
+```
+
+Check all columns of summary statistics are present for these data:
+
+```{r}
+str_subset(string = colnames(gpr.bs.12.5.tb), pattern = 'globalRad\\_5m') %>%
+  tibble(c.name = .) %>%
+    separate(col = c.name, into = c('part.1', 'part.2', 'part.3'), sep = 'globalRad\\_5m\\_|\\_12m') %>%
+      pull(part.2) %>%
+        sort() %>%
+          identical(x = ., y = valleydepth.12.5m.ss)
+```
+
+Check for missing data:
+
+```{r}
+anyNA(gpr.bs.12.5.tb)
+```
+
+These data are complete.
+
+Joining the prepared summary statistics for the 12.5m buffers:
+
+```{r}
+dem.all.bs.12.5.tb <- full_join(x = dem.bs.12.5.tb, y = gpr.bs.12.5.tb, by = 'CLNR')
+```
+
+Final check for missing values:
+```{r}
+anyNA(dem.all.bs.12.5.tb)
+```
+
+Thus `dem.all.bs.12.5.tb` is complete.
+
+```{r}
+dem.bs.tb <- dem.all.bs.12.5.tb
+```
+
+Check for missing values:
+```{r}
+anyNA(dem.bs.tb)
+```
+
+Check for duplicated values:
+```{r}
+group_by(dem.bs.tb, CLNR) %>%
+  count() %>%
+    summary()
+```
+
+Write out the prepared data:
+
+```{r, eval = FALSE}
+save(list = 'dem.bs.tb', file = '~/rwa/data/dtm_buffer_summaries/Prepared_DTM_Buffer_Summaries/dem.bs.tb.RData')
+```

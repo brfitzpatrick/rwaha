@@ -1,0 +1,2303 @@
+---
+title: "S5 Preparation of Climate Data"
+author: "Author Blank for Double Blind Peer Review"
+output: html_notebook
+---
+
+## Introduction
+
+We have daily observations of six climate variables at a 100m resolution across Switzerland from the end of 2016 back to early last century.
+
+These six climate variables are:
+
+1\. Precipitation (cm)
+
+2\. Average Temperature (deg. C)
+
+3\. Minimum Temperature (deg. C)
+
+4\. Maximum Temperature (deg. C)
+
+5\. Insolation (kJ/m2/day)
+
+6\. Potential Evapotranspiration (mm/day)
+
+Here I will use the first five of these variables to calculate summary statistics for the climatic conditions at the NFI plots.
+These summary statistics will be used as potential explanatory variables in our models of red wood ant occurrence. 
+It remains to be seen whether the 100m resolution of these climate data is fine enough to be of relevance to the distribution of red wood ant nests. 
+It could be that microclimatic variations due conditions at the NFI plots such as microaspect and canopy closure have a much stronger influence on the distribution of ants nests than climate statistic calculated at the 100m scale. 
+We may be able to capture some such effects via interactions in our model between our 100m scale climatic variables and other variables such as: descriptions of the microaspect of the LFI plots (we have a 5m DTM), metrics describing the canopy structure collected as part of the NFI field surveys and potential radiation as calculated from the hemispherical viewshed algorithm which we have at a 25m resolution.
+Thus in the absence of finer resolution climate data it seems worthwhile to include these data in our analysis. 
+
+The ants occurrence data were collected between 2009 and 2017.
+Consequently, I will calculate climatic summaries for each plot for the year preceding the year in which the ants were sampled at that plot and two longer periods prior to this year of sampling. 
+Having ants occurrence data from 2017 and only having climate data available up to the end of 2016 it will not be possible to calculate descriptions of the climate in the year of sampling for all samples.
+Anita has suggested using the 5 year and 10 year periods prior to the year in which the ants were sampled for this purpose.
+I will start by calculating summary statistics from the daily climate data in the style of BIOCLIM (Nix, 1986; Busby, 1991) and ANUCLIM (Xu & Hutchinson, 2011).
+The BIOCLIM and ANUCLIM statistics have been designed to summarise time series of climatic data into a set of summary statistics of broad relevance to biological processes.
+These variables may hold relevance to the distribution of the red wood ants directly or indirectly through relevance to the phloem feeding mutualists of red wood ants and the tree species that host these mutualists.
+Anita and I have also designed a small set of summary statistics to quantify aspects of the climate that may hold direct relevance to specific aspects of the biology of red wood ants. 
+In the sections below I describe in greater detail on the BIOCLIM and ANUCLIM inspired summary statistics that I will calculate. Following this section I introduce the summary statistics Anita and I have proposed to quantify climatic effects on ant foraging. I conclude with a brief discussion other aspects of the ants' biology that may be affected by aspects of the climate which are harder to quantify from the combination of the climate data we have and the research conducted on these ants to date.
+
+### BIOCLIM and ANUCLIM
+The BIOCLIM summary statistics are calculated from time series of temperature and precipitation data.
+The ANUCLIM set of summary statistics extends the BIOCLIM with an additional 8 summary statistics calculated from time series of insolation data with the remainder being statistics describing soil moisture.
+We have the temperature and precipitation data necessary to calculate statistics in the style of the original BIOCLIM suite and the insolation data necessary to calculate statistics from ANUCLIM that describe insolation time series.
+However, we lack the soil maps necessary for calculating the summary statistics from ANUCLIM that describe soil moisture.
+BIOCLIM and ANUCLIM are calculated from time series that have been aggregated to a monthly or weekly timestep.
+Having obtained data with a daily timestep an not wishing to aggregate away detail that could prove useful for predicting red wood ant distributions we have chosen the work with the data at the temporal resolution at which we obtained it.
+Some of the statistics we calculate from our time series with daily time steps will have identical values to those that we would have calculated if we had aggregated our time series to weekly or monthly time steps before calculating these statistics.
+Examples of such statistics which are unaffected by this decision are the annual mean temperature and the total annual precipitation.
+Other statistics describing the climate data within the hottest, coldest, wettest or driest quarter of the year will vary depending on the level of aggregation performed on the data prior the calculate of these statistics.
+With the daily data I have been able to use rolling (windowed) operations to find the consecutive 91 days in each year (at each site) with the climate characteristics in question (e.g. highest total precipitation) rather than being restricted to finding the 13 consecutive weeks the climate characteristics in question.
+Other statistics such as the Precipitation Seasonality which is the standard deviation of the precipitation estimates expressed as a percentage of the mean of those estimates will vary depending on the time step of the data used to calculate the standard deviation.
+
+While the R package [`dismo`](https://cran.r-project.org/web/packages/dismo/index.html) contains a function for calculating the 19 BIOCLIM statistics I had to write original R code to calculate the additional 16 ANUCLIM style statistics for the time series of insolation.
+The additional ANUCLIM variables being very much in the style of the original BIOCLIM statistics it was straight forward to calculate all our climate statistics in the same manner using the tidyverse suite of packages and we found this method to work well with the storage format we had selected for the climate time series.
+
+In addition to the BIOCLIM and ANUCLIM style statistics discussed above I have also calculated BIOCLIM style interval based statistics for ants' active and dormant periods. 
+I have not been able to find references on what cues the start or end of dormancy so my idea of defining these periods based on characteristics of the daily climate data does not appear feasible. 
+Furthermore this may not have been a particularly good idea to begin with as microclimatic variations due to factors such as aspect and the amount of shading from the canopy may be affecting the dates of the start and end of the active period at a scale much finer than the 100m resolution of the daily climate data. 
+Instead Anita has suggested defining the active period as April to October inclusive and the dormant period as November to March inclusive.
+
+### Climatic Effects on Ant Foraging
+The key points made regarding climate effects on ants' foraging behaviour in Chapter 7 of *Wood Ant Ecology and Conservation* (Stockan, Robinson 2016) are summarised below.
+
+Ants will forage:
+
+* at temperatures &gt;5 degrees C (even at night)
+* in high or low humidity
+* in light precipitation
+
+Ants' foraging is disrupted by:
+
+* heavy precipitation
+* &gt;33 degrees C
+
+The high temperature threshold beyond which foraging is disrupted may vary between species (e.g. high altitude/latitude species may be disrupted by lower high temperatures than low altitude/latitude species). 
+However I have not been able to find literature on this topic.
+I\'ve also not been able to find references on what would be a sufficiently high daily precipitation to disrupt ants' foraging.
+Consequently, Anita and I have defined a summary statistic as the number of days during the active period when the weather should have limited foraging based on the above information. 
+We define days on which the weather could disrupt foraging as days between April and October that have one or more of the following characteristics:
+
+ * maximum temperature &lt; 5 C
+ * precipitation &gt; 5 mm
+ * maximum temperature &gt; 30 C
+
+Summary statistics of the daily precipitation during the foraging period such as maxima, minima, medians and standard deviations  also provide estimates of the relative temporal concentrations of rainfall in this period. 
+This could be useful because a large amount of rain falling over a short window of time (e.g. one day) would likely be more disruptive to foraging than the same amount of rain spread over many days.
+
+### Climatic Effects on Ant Breeding
+Ants nests are heated during the active period so brood development and rearing is largely independent of external conditions. 
+However external temperatures will determine the metabolic cost of this heating to the ants (if this cost is indeed born by ants and not bacteria or some other mechanism). 
+Thus the BIOCLIM style descriptions of temperature during the warm months and the active period are potentially relevant to both the ants' breeding and their foraging.
+
+Climatic cues of and effects on mating flights while clearly relevant to the distributions of ants seem difficult to quantify and poorly understood.
+
+In Chapter 12 of *Wood Ant Ecology and Conservation* (Stockan & Robinson 2016) both excessive rainfall and insufficient rainfall are noted as factors which could cause nests to become unsuitable for rearing offspring. 
+However, this is not specific enough to define metrics based on daily climate data.
+
+### Climatic Effects on Ant Winter Dormancy
+
+Consistently cool temperatures over winter keep ant metabolisms low and saves the colony energy.
+
+If a colony\'s over wintering chamber were to warm at some point during the dormant period this would increase the ants' metabolic rates and cost more energy than if they had been able to remain cool throughout their dormancy. 
+The difficulty with detecting such warmings from the climate data arises from the climate data containing only above ground temperatures and the over wintering chamber being underground beneath the nest and thus quite well insulated. 
+After consideration Anita and I have decided not to attempt to quantify this phenomena from the available climate data.
+
+### Climate Effects on Aphids
+
+Red wood ants have mutualisms with over 170 species of phloem feeding insects (Stockan & Robinson 2016). Thus where ants are present they could well be interacting with phloem feeding insects suited to the local climate. 
+Climatic variations such as heavy precipitation or changes in temperature will still affect the biology of these insects (breeding, metabolism, honey dew production, etc.). 
+Thus the BIOCLIM variables may also have indirect relevance to the ants' via relevance to their mutualists. 
+We have not thought of any summary statistics additional to the BIOCLIM summary statistics that we could calculate from the daily
+climate data that may have relevance to the ants' mutualists but are open to suggestions on this topic.
+
+The timing of the growth of new leaves on deciduous trees and the length of time the green leaves persist seems relevant to phloem feeding insects living on deciduous trees. 
+This would clearly be more relevant to ants in plots with higher percentage covers of deciduous species than coniferous species.
+However this consideration is further complicated by ants not dividing their honey dew foraging effort evenly between all trees in the vicinity of their nests. 
+Thus this may be a complicated effect to quantify an would require additional data on the timing of leaf growth throughout Switzerland.
+
+
+### References from Introduction
+
+Busby, J. R. (1991). BIOCLIM - a bioclimate analysis and prediction system. Plant Protection Quarterly, 6(1), 8–9.
+
+Nix, H. A. (1986). A biogeographic analysis of Australian elapid snakes. In R. Longmore (Ed.), Atlas of Elapid Snakes of Australia (pp. 4–15). Canberra: Australian Government Pub. Service. 
+
+Stockan, J. A., & Robinson, E. J. H. (2016). Wood Ant Ecology and Conservation. Cambridge University Press.
+
+Xu, T., & Hutchinson, M. (2011). ANUCLIM version 6.1 user guide. The Australian National University, Fenner School of Environment and Society, Canberra.
+
+## Contents:
+1. Read in the NFI plot coordinates
+
+2. Read in the date and time each NFI plot was searched for ants
+
+3. Join the plot coordinates to the date and time each plot was searched for ants
+
+4. Extract the values of each climate variable at the plot coordinates for each day in the time series
+
+5. Join the tibbles created for each climate variable to create a storage tibble with:
+
+  + one row for each unique combination of plot identity and date
+
+  + columns for each of the five climate variables:
+
+     - prcp = precipitation
+
+     - tave = average temperature
+ 
+     - tmin = minimum temperature
+
+     - tmax = maximum temperature
+
+     - srad = solar radiation (insolation)
+
+6. Calculate the climate summary statistics for each combination of plot and year
+
+7. Summarise the values of the climate summary statistics for the periods of 1, 5 and 10 years prior to the years in which plots were searched for ants
+
+8. Join all tibbles of climate summary statistics
+
+9. Filter the set of climate summary statistics to mitigate the effects of unfavourable numeric characteristics on later modelling
+
+10. Export the set of filtered climate summary statistics
+
+### Load the packages I will use
+```{r message=FALSE, warning=FALSE}
+library(visdat)
+library(ncdf4)
+library(readxl)
+library(lubridate)
+library(RcppRoll) 
+library(viridis) 
+library(tidyverse) 
+```
+
+I am also making use of functions from the packages `raster` and `sp`.
+There is a namespace conflict between `tidyverse` and `raster` so instead of loading `raster` (or `sp`) I will call functions from these packages individually with the following syntax `raster::function.name()`
+
+## 1. Read in the NFI plot coordinates
+
+We have been debating whether to use the Scrub Forest plots in the analysis.
+Extracting the climate data at the plot locations from the NetCDF files is computationally expensive so here I will extract the climate data for all NFI plots.
+This way I can subset these data later as we decide which subset of plots to use rather than having to rerun the extraction code for additional plots.
+
+```{r}
+Plot.Coords.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Richtige Koordinaten der besuchten Probeflächen_2009-2017_Rohdaten.xlsx', sheet = 'SQL Results')
+
+slice(Plot.Coords.tb, 1:10)
+```
+These coordinates are expressed using the Swiss Grid CH1903/LV03 cartographic projection system also known as EPSG 21781.
+
+Check the all plots (identified by CLNR) have unique coordinates:
+```{r}
+group_by(Plot.Coords.tb, CLNR) %>%
+  summarise(N = n()) %>%
+   filter(N > 1)
+```
+
+`...1` are row numbers so we'll drop those:
+```{r}
+Plot.Coords.tb <- select(Plot.Coords.tb, -`...1`)
+
+slice(Plot.Coords.tb, 1:10)
+```
+
+## 2. Read in the date and time each NFI plot was searched for ants
+
+Read in the Prepared Ants Data
+
+```{r}
+load('~/rwa/data/ants/Preparations_of_Ameisen_Data_2009-2017_pourWSL_22.03.2018_xlsx/Red_Wood_Ant_Mound_Occurence.RData')
+
+nrow(RWAMO.tb)
+```
+
+Read in the Dates and Times the Plots were searched for ant hills:
+
+'Zeitpunkt Ameisenhaufenbeurteilung_2009-2017 (Erstaufnahme)_Rohdaten' = 'Event time of anthill assessment_2009-2017 (initial admission)_raw data'
+
+```{r}
+Plot.Visit.Times.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Zeitpunkt Ameisenhaufenbeurteilung_2009-2017 (Erstaufnahme)_Rohdaten.xlsx', sheet = 'SQL Results')
+
+slice(Plot.Visit.Times.tb, 1:10)
+```
+
+Check whether these data contain records of any plots being revisited after the initial visit:
+```{r}
+group_by(Plot.Visit.Times.tb, CLNR) %>%
+  summarise(N = n()) %>%
+    pull(N) %>%
+     summary(N)
+```
+
+Thus each plot is associated with one and only one date and time.
+
+The revisits are in:
+
+'Zeitpunkt Ameisenhaufenbeurteilung_2009-2017 (Wiederholungsaufnahme)_Rohdaten' = 'Event time of anthill assessment_2009-2017 (Repeat recording)_Raw data'
+
+Let's start with initial visits only, we can return to consider how to incorporate revisits later if necessary.
+Data from revisits of plots have essentially been obtained after twice the sampling 'effort' was expended upon these plots and so perhaps should be considered differently to data from the initial visits.
+
+Again these data contain a column `...1` of what are essentially row numbers so I'm dropping that column.
+
+```{r}
+Plot.Visit.Times.tb <- select(Plot.Visit.Times.tb, -`...1`)
+
+slice(Plot.Visit.Times.tb, 1:10)
+```
+
+Check whether we have the site visit times for all of the plots that were searched for ant mounds:
+
+```{r}
+summary(RWAMO.tb$CLNR %in% Plot.Visit.Times.tb$CLNR)
+```
+
+Thus we lack site visit times for 26 of the plots that were searched for ant mounds.
+
+I have asked Christoph about this and he has provided estimates of the missing times and dates of site visits based on adjacent worksteps in the field schedule in the file `Fehlende_Zeitangaben.xlsx`:
+
+```{r}
+Add.Times.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Fehlende_Zeitangaben_v2.xlsx', sheet = 'SQL_Result_Removed_Comment_Row')
+```
+
+Check all plots that are missing from `Plot.Visit.Times.tb` are present `Add.Times.tb`:
+
+```{r}
+additional.times.clnr <- pull(Add.Times.tb, CLNR) %>%
+  sort()
+
+missing.times.clnr <- anti_join(x = RWAMO.tb, y = Plot.Visit.Times.tb, by = 'CLNR') %>%
+  pull(CLNR) %>%
+    sort()
+
+identical(additional.times.clnr, missing.times.clnr)
+```
+
+Join on the missing dates and times:
+
+```{r}
+Plot.Visit.Times.v2.tb <- select(Add.Times.tb, colnames(Plot.Visit.Times.tb)) %>%
+  bind_rows(Plot.Visit.Times.tb)
+```
+
+Check for duplicate entries for any CLNR
+
+```{r}
+group_by(Plot.Visit.Times.v2.tb, CLNR) %>%
+  count() %>%
+    pull(n) %>% 
+      summary()
+```
+
+Thus each CLNR has only one row in `Plot.Visit.Times.v2.tb`.
+
+Check for missing data
+
+```{r}
+anyNA(Plot.Visit.Times.v2.tb)
+```
+
+Visualise the structure of the missing data among the plots that were searched for ant mounds and were missing values for the STARTTIME, the ENDTIME or both:
+
+```{r}
+filter_all(.tbl = Plot.Visit.Times.v2.tb, .vars_predicate = any_vars(is.na(.))) %>%
+  filter(CLNR %in% RWAMO.tb$CLNR) %>%
+    vis_miss()
+```
+
+Thus the plots that were searched for ants and are missing values for either the start time or the end time of the field survey are all only missing data in the end time column.
+
+Check the difference in STARTTIME and ENDTIME in plots where this is present
+
+```{r}
+filter_all(.tbl = Plot.Visit.Times.v2.tb, .vars_predicate = all_vars(!is.na(.))) %>%
+  mutate(sampling.duration.sec = ENDTIME - STARTTIME,
+         sampling.duration.hrs = as.numeric(sampling.duration.sec, units = 'hours')) %>%
+    ggplot(aes(x = sampling.duration.hrs)) + 
+      geom_histogram(fill = 'grey', colour = 'black') + 
+      theme_bw()
+```
+
+Thus we can see that the amount of time spent searching a plot for ant mounds was almost always less than half an hour and never more than 2.5hrs.
+
+Consequently where the end time is missing it is safe to assume that the sampling for ant mounds was always completed on the same day as the date given in STARTTIME.
+
+Thus it is sensible to use STARTTIME to calculate the date on which the plots were searched for ant mounds.
+
+This is useful because the column STARTTIME does not contain any missing values.
+
+```{r}
+Plot.Visit.Times.tb <- Plot.Visit.Times.v2.tb
+```
+
+## 3. Join the plot coordinates to the date and time each plot was searched for ants
+
+```{r}
+Plot.Crd.VT.tb <- full_join(x = Plot.Coords.tb, y = Plot.Visit.Times.tb, by = 'CLNR') %>%
+  filter(CLNR %in% RWAMO.tb$CLNR) %>%
+    mutate(SAMPLETIME = STARTTIME)
+
+summary(Plot.Crd.VT.tb)
+```
+
+## 4. Extract the values of each climate variable at the plot coordinates for each day in the time series
+
+### Trial Extraction of Data from a single DayMet Layer at the Coordinates of the NFI Plot Centroids:
+
+Open a connection to one of the NetCDF files of DayMet Data (Precipitation Data in this example):
+```{r}
+clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_prcp_2012-2013_d.nc4'
+
+rst.brck <- raster::brick(clim.path)
+```
+
+Subset to one of the layers of the NetCDF file (each layer is the data from one day in the time series)
+```{r}
+rst.lyr.1 <- raster::raster(x = rst.brck, layer = 1)
+```
+
+Plot the precipitation data from this layer:
+```{r, fig.width = 12}
+raster::plot(x = rst.lyr.1, col = viridis(1e3), main = paste0('Precipitation ', names(rst.lyr.1)), xlab = 'Easting', ylab = 'Northing')
+```
+
+Examine the Coordinate Projection System used by the DayMet data:
+```{r}
+raster::crs(rst.lyr.1)
+```
+
+It will be computationally cheaper (likely by orders of magnitude) to reproject the coordinates of the NFI Plot Centroids to the projection system of the DayMet data than to reproject each DayMet layer to the projection system of the NFI Plot Centroids.
+
+The NFI Plot Centroids have been provided using the projection: EPSG 21781 = ch1903 / lv03.
+```{r}
+raster::crs("+init=epsg:21781")
+```
+
+Converting the NFI Plot Centroids into a `SpatialPointsDataFrame` with the CLNRs stored as attributes of the points and the coordinate reference system of the NFI Plot Centroids stored in the appropriate slot as a PROJ.4 string.
+
+```{r}
+PCC.sp <- sp::SpatialPointsDataFrame(coords = Plot.Coords.tb[,c('X', 'Y')],
+                                     data = data.frame(CLNR = Plot.Coords.tb$CLNR), 
+                                     proj4string = raster::crs("+init=epsg:21781"))
+
+PCC.sp
+```
+
+Check that the CLNRs have been associated with the correct coordinates in the `PCC.sp`:
+```{r}
+test.obj.1 <- tibble(X = sp::coordinates(PCC.sp)[,1],
+       Y = sp::coordinates(PCC.sp)[,2],
+       CLNR = PCC.sp$CLNR) 
+
+test.obj.2 <- select(Plot.Coords.tb, X, Y, CLNR)
+
+ifelse(identical(test.obj.1, test.obj.2), 'test passed', 'test failed')
+```
+
+Cleaning up after the test:
+```{r}
+rm(list = c('test.obj.1', 'test.obj.2'))
+```
+
+Reproject the coordinates of the Plot Centroids to use the coordinate reference system of the Daymet data
+```{r}
+PCC.sp.rp <- sp::spTransform(x = PCC.sp, CRSobj = raster::crs(rst.lyr.1))
+
+PCC.sp.rp
+```
+
+Plot the extracted layer from the DayMet data with the reproject NFI Plot Centroids locations overlayed as pink points:
+```{r}
+raster::plot(x = rst.lyr.1,
+             col = viridis(1e3),
+             addfun = points(sp::coordinates(PCC.sp.rp), col = 'pink', cex = 0.1),
+             main = paste0('Precipitation ', names(rst.lyr.1), '\n NFI Plot Location in Pink'),
+             xlab = 'Easting',
+             ylab = 'Northing'
+            )
+```
+
+Check if any points intersect a pixel with missing climate data (i.e. a pixel outside the outline of Switzerland):
+```{r}
+raster::extract(x = rst.lyr.1, sp::coordinates(PCC.sp.rp)) %>%
+  anyNA() %>%
+    ifelse(., 'one or more points intersect pixels with missing climate data', 'no points intersect pixels with missing climate data')
+```
+
+How many points intersect pixels missing climate data:
+```{r}
+raster::extract(x = rst.lyr.1, sp::coordinates(PCC.sp.rp)) %>%
+  is.na() %>%
+    which() %>%
+      length() %>%
+        c(.,' point(s) intersect pixels missing climate data') %>%
+          paste0(.,collapse = '')
+```
+
+Examining this point that intersected a pixel missing climate information (the point is plotted as the red filled circle and the climate information plotted as the raster pixels - pixels missing values are left white):
+```{r}
+Missing.Prcp.Pt <- raster::extract(x = rst.lyr.1, sp::coordinates(PCC.sp.rp)) %>%
+  tibble(X = sp::coordinates(PCC.sp.rp)[,1],
+         Y = sp::coordinates(PCC.sp.rp)[,2],
+         Prcp = .) %>%
+    filter(is.na(Prcp))
+
+raster::plot(x = rst.lyr.1,
+             col = viridis(6),
+             addfun = points(Missing.Prcp.Pt[,c('X', 'Y')], col = 'red', cex = 3, pch = 16),
+             breaks = 0:5)
+```
+
+Zooming in (the point is plotted as the red filled circle):
+```{r}
+raster::crop(x = rst.lyr.1,
+             y = c(Missing.Prcp.Pt$X-c(1000,-2000), Missing.Prcp.Pt$Y-c(1000,-1000))) %>% 
+  raster::plot(x = .,
+               col = viridis(6),
+               breaks = 0:5,
+               addfun = points(Missing.Prcp.Pt[,c('X', 'Y')], col = 'red', cex = 1, pch = 16))
+```
+
+We can interpolate the value at this point from the values in neighbouring pixels
+```{r}
+Missing.Prcp.Pt %>%
+  select(X, Y) %>%
+    mutate(Prcp = raster::extract(x = rst.lyr.1, y = cbind(.$X, .$Y), method = 'bilinear', fun = 'mean', na.rm = TRUE))
+```
+
+### A function for automating the extraction of the climate data at the NFI plot centroids:
+
+dcdex = Daymet Climate Data Extractor
+
+**Description:**
+
+This function extracts the daily climate data at the coordinates supplied to the argument `sites.tb` from the NetCDF file referenced by the file path supplied to the argument `clim.path`.
+The extracted data are returned as a tibble with columns `CLNR` (the unique plot identifier), `Date.ymd` the date and the name of the climate variable supplied to `var.name` (note this must be the name of the climate variable in the NetCDF file).
+
+**Arguments:**
+
+ * `clim.path` (character) path to the NetCDF file of climate data
+ * `sites.tb` (tibble) containing the coordinates of the sites (in particular: a column named `X` for eastings, a column named `Y` for northings and a column named `CLNR` containing the numeric identifiers of the sites)
+ * `sites.proj4` (character) the coordinates reference system of the coordinates in `sites.tb` expressed as a proj4 string
+ * `var.name` (character) the name of the variable in the NetCDF file you wish to extract
+ * `start.year` (numeric) the year at the beginning of the time series for which you wish to extract data from the NetCDF files
+ * `rep.prog` (logical) report the progress of the extraction while the function is running
+ * `rep.step` (numeric) percentage increments at which to report progress towards completion
+
+
+```{r}
+dcdex <- function(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_prcp_2012-2013_d.nc4',
+                  sites.tb  = Plot.Coords.tb,
+                  sites.proj4 = raster::crs("+init=epsg:21781"),
+                  var.name  = 'prcp',
+                  start.year = 1999,
+                  rep.prog = TRUE,
+                  rep.step = 20){
+  require(tidyverse)
+  rst.brck <- raster::brick(clim.path)
+  sites.sp <- sp::SpatialPointsDataFrame(coords = sites.tb[,c('X', 'Y')],
+                                         data = data.frame(CLNR = sites.tb$CLNR), 
+                                         proj4string = sites.proj4
+                                        )
+  sites.rp <- sp::spTransform(x = sites.sp, CRSobj = raster::crs(rst.brck))
+  name.lengths <- str_length(string = names(rst.brck)) %>%
+    unique()
+  if(name.lengths == 20){
+    dates.in.brick <- str_remove(string = names(rst.brck), pattern = '^X') %>%
+      ymd_hms()
+  }
+  if(name.lengths == 11){
+    dates.in.brick <- str_remove(string = names(rst.brck), pattern = '^X') %>%
+      ymd()
+  }
+  if(!(length(name.lengths) == 1)){
+    print('Error: NetCDF layer names contain different numbers of characters')
+    return('Error')
+  }
+  if(!(name.lengths %in% c(11,20))){
+    print('Error: Unexpected number of characters in NetCDF layer name')
+    return('Error')
+  }
+  prog.i <- 0
+  store.tb <- tibble(CLNR = vector(length = 0, mode = 'numeric'),
+                     Date.ymd  = as_date(vector(length = 0)),
+                     clim.var = vector(length = 0, mode = 'numeric')
+                    )
+  counter = 1
+  index.seq <- (year(dates.in.brick) >= start.year) %>%
+    which() %>%
+      sort()
+  n.days <- length(index.seq)
+  for(i in index.seq){
+    rst.lyr.i <- raster::raster(x = rst.brck, layer = i)
+    name.i <- names(rst.lyr.i)
+    if(str_length(name.i) == 20){
+      date.i <- str_remove(string = name.i, pattern = '^X') %>%
+        ymd_hms() %>%
+          as_date()
+    }
+    if(str_length(name.i) == 11){
+      date.i <- str_remove(string = name.i, pattern = '^X') %>%
+        ymd() %>%
+          as_date()
+    }
+    store.tb.i <- tibble(CLNR = sites.rp$CLNR,
+                         Date.ymd = date.i,
+                         clim.var = raster::extract(x = rst.lyr.i, 
+                                                    y = sp::coordinates(sites.rp)
+                                                   )
+                        )
+    if(anyNA(store.tb.i$clim.var)){
+      CLNR.cvna <- filter(store.tb.i, is.na(clim.var)) %>%
+        pull(.data = ., CLNR)
+      cv.intp.tb <- tibble(CLNR = CLNR.cvna,
+                           Date.ymd = date.i,
+                           clim.var.interp = raster::extract(x = rst.lyr.i,
+                                                             y = sites.rp[sites.rp$CLNR == CLNR.cvna,] %>%
+                                                                   sp::coordinates(),
+                                                             method = 'bilinear',
+                                                             fun = 'mean',
+                                                             na.rm = TRUE
+                                                            )
+                    )
+      store.tb.i <- left_join(store.tb.i, cv.intp.tb, by = c('CLNR', 'Date.ymd')) %>%
+                      mutate(clim.var.2 = case_when(   is.na(clim.var)  & (!is.na(clim.var.interp)) ~ clim.var.interp,
+                                                     (!is.na(clim.var)) &   is.na(clim.var.interp)  ~ clim.var,
+                                                      (is.na(clim.var)) &   is.na(clim.var.interp)  ~ clim.var
+                                                   )
+                      ) %>%
+                        select(-clim.var, -clim.var.interp) %>%
+                          rename(clim.var = clim.var.2)
+    
+    }
+    store.tb <- bind_rows(store.tb, store.tb.i)
+    rm(list = c('rst.lyr.i', 'name.i', 'date.i', 'CLNR.cvna', 'store.tb.i'))
+    if(rep.prog & (100*counter/n.days - prog.i >= rep.step) ){
+      print(paste(round(100*counter/n.days,2),'% of',n.days, ' days complete' ))
+      prog.i <- 100*counter/n.days
+    }
+    counter <- counter + 1
+  }
+  colnames(store.tb) <- str_replace(string = colnames(store.tb), pattern = '^clim.var$', replacement = var.name)
+  return(store.tb)
+}
+```
+
+In the sections below I have extracted time series of climate data starting from the 1st of January 1999 and running until the 31st of December 2016 (which is the end of the available data).
+This extraction takes around 6.5hrs for the five climate variables. 
+For this reason I have not run the extraction code when compiling the present version of this R notebook but am rather loading the joined results of this extraction from a previously saved workspace at the start of Section 5.
+
+```{r}
+start.year <- 2009-10
+
+start.year
+```
+
+### Precipitation Data Extraction
+
+```{r,eval=FALSE}
+system.time(
+prcp.1999.2006.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_prcp_1930-2006_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'prcp',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 5)
+)
+```
+
+```{r,eval=FALSE}
+system.time(
+prcp.2007.2011.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_prcp_2007-2011_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'prcp',
+                           start.year = start.year,
+                           rep.prog = FALSE)
+)
+```
+
+```{r,eval=FALSE}
+system.time(
+prcp.2012.2013.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_prcp_2012-2013_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'prcp',
+                           start.year = start.year,
+                           rep.prog = FALSE)
+)
+```
+
+```{r,eval=FALSE}
+system.time(
+prcp.2014.2016.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_prcp_2014-2016_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'prcp',
+                           start.year = start.year,
+                           rep.prog = FALSE)
+)
+```
+
+```{r,eval=FALSE}
+prcp.1999.2016.tb <- purrr::reduce(.x = list(prcp.1999.2006.tb, 
+                                             prcp.2007.2011.tb, 
+                                             prcp.2012.2013.tb, 
+                                             prcp.2014.2016.tb), 
+                                   .f = bind_rows)
+```
+
+```{r,eval=FALSE}
+save(list = c('prcp.1999.2016.tb', 'prcp.1999.2006.tb', 'prcp.2007.2011.tb', 'prcp.2012.2013.tb', 'prcp.2014.2016.tb'),
+     file = '~/rwa/data/processed_climate/intermediate_workspaces/prcp.1999.2016')
+```
+
+
+### Solar Radiation Data Extraction
+
+```{r,eval=FALSE}
+system.time(
+  srad.1999.1999.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_srad_1990-1999_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'srad',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 25)
+)
+```
+
+```{r,eval=FALSE}
+system.time(
+  srad.2000.2006.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_srad_2000-2006_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'srad',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 25)
+)
+```
+
+```{r,eval=FALSE}
+system.time(
+  srad.2007.2011.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_srad_2007-2011_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'srad',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 25)
+)
+```
+
+```{r,eval=FALSE}
+system.time(
+  srad.2012.2013.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_srad_2012-2013_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'srad',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 25)
+)
+```
+
+```{r,eval=FALSE}
+system.time(
+  srad.2014.2016.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_srad_2014-2016_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'srad',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 25)
+)
+```
+
+```{r,eval=FALSE}
+srad.1999.2016.tb <- purrr::reduce(.x = list(srad.1999.1999.tb,
+                                             srad.2000.2006.tb,
+                                             srad.2007.2011.tb,
+                                             srad.2012.2013.tb,
+                                             srad.2014.2016.tb),
+                                   .f = bind_rows)
+
+save(list = c('srad.1999.2016.tb', 'srad.1999.1999.tb', 'srad.2000.2006.tb', 'srad.2007.2011.tb', 'srad.2012.2013.tb', 'srad.2014.2016.tb'), file = '~/rwa/data/processed_climate/intermediate_workspaces/srad.1999.2016.tb')
+```
+
+### Daily Average Temperature Extraction
+
+```{r,eval=FALSE}
+system.time(
+  tave.1999.2006.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_tave_1930-2006_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'tave',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 25)
+)
+```
+
+```{r,eval=FALSE}
+system.time(
+  tave.2007.2011.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_tave_2007-2011_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'tave',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 25)
+)
+```
+
+```{r,eval=FALSE}
+system.time(
+  tave.2012.2013.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_tave_2012-2013_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'tave',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 25)
+)
+```
+
+```{r,eval=FALSE}
+system.time(
+  tave.2014.2016.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_tave_2014-2016_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'tave',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 25)
+)
+```
+
+```{r,eval=FALSE}
+tave.1999.2016.tb <- purrr::reduce(.x = list(tave.1999.2006.tb,
+                                             tave.2007.2011.tb,
+                                             tave.2012.2013.tb,
+                                             tave.2014.2016.tb),
+                                   .f = bind_rows)
+
+save(list = c('tave.1999.2016.tb', 'tave.1999.2006.tb', 'tave.2007.2011.tb', 'tave.2012.2013.tb', 'tave.2014.2016.tb'), file = '~/rwa/data/processed_climate/intermediate_workspaces/tave.1999.2016.tb')
+```
+
+### Daily Maximum Temperature Extraction
+
+```{r,eval=FALSE}
+system.time(
+  tmax.1999.2006.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_tmax_1930-2006_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'tmax',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 25)
+)
+```
+
+```{r,eval=FALSE}
+system.time(
+  tmax.2007.2011.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_tmax_2007-2011_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'tmax',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 25)
+)
+```
+
+```{r,eval=FALSE}
+system.time(
+  tmax.2012.2013.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_tmax_2012-2013_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'tmax',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 25)
+)
+```
+
+```{r,eval=FALSE}
+system.time(
+  tmax.2014.2016.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_tmax_2014-2016_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'tmax',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 25)
+)
+```
+
+```{r,eval=FALSE}
+tmax.1999.2016.tb <- purrr::reduce(.x = list(tmax.1999.2006.tb,
+                                             tmax.2007.2011.tb,
+                                             tmax.2012.2013.tb,
+                                             tmax.2014.2016.tb),
+                                   .f = bind_rows)
+
+save(list = c('tmax.1999.2016.tb', 'tmax.1999.2006.tb', 'tmax.2007.2011.tb', 'tmax.2012.2013.tb', 'tmax.2014.2016.tb'), file = '~/rwa/data/processed_climate/intermediate_workspaces/tmax.1999.2016.tb')
+```
+
+### Daily Minimum Temperature Extraction
+
+```{r,eval=FALSE}
+system.time(
+  tmin.1999.2006.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_tmin_1930-2006_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'tmin',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 25)
+)
+```
+
+```{r,eval=FALSE}
+system.time(
+  tmin.2007.2011.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_tmin_2007-2011_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'tmin',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 25)
+)
+```
+
+```{r,eval=FALSE}
+system.time(
+  tmin.2012.2013.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_tmin_2012-2013_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'tmin',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 25)
+)
+```
+
+```{r,eval=FALSE}
+system.time(
+  tmin.2014.2016.tb <- dcdex(clim.path = '/media/ben/My Book/_Climate/daymet/obs_ts_d_1930_2016/ch_tmin_2014-2016_d.nc4',
+                           sites.tb = Plot.Coords.tb,
+                           sites.proj4 = raster::crs("+init=epsg:21781"),
+                           var.name = 'tmin',
+                           start.year = start.year,
+                           rep.prog = FALSE,
+                           rep.step = 25)
+)
+```
+
+```{r,eval=FALSE}
+tmin.1999.2016.tb <- purrr::reduce(.x = list(tmin.1999.2006.tb,
+                                             tmin.2007.2011.tb,
+                                             tmin.2012.2013.tb,
+                                             tmin.2014.2016.tb),
+                                   .f = bind_rows)
+
+save(list = c('tmin.1999.2016.tb', 'tmin.1999.2006.tb', 'tmin.2007.2011.tb', 'tmin.2012.2013.tb', 'tmin.2014.2016.tb'), file = '~/rwa/data/processed_climate/intermediate_workspaces/tmin.1999.2016.tb')
+
+```
+
+## 5. Join the tibbles created for each climate variable to create a storage tibble with:
+
+  + one row for each unique combination of plot identity and date
+
+  + columns for each of the five climate variables:
+
+     - prcp = precipitation
+
+     - tave = average temperature
+ 
+     - tmin = minimum temperature
+
+     - tmax = maximum temperature
+
+     - srad = solar radiation (insolation)
+
+```{r,eval=FALSE}
+clim.1999.2016.tb <- purrr::reduce(.x = list(prcp.1999.2016.tb,
+                                             tave.1999.2016.tb,
+                                             tmin.1999.2016.tb,
+                                             tmax.1999.2016.tb,
+                                             srad.1999.2016.tb),
+                                   .f = full_join,
+                                   by = c('CLNR', 'Date.ymd'))
+```
+
+
+```{r, eval = FALSE, echo = FALSE}
+# Save an interim workspace with this storage tibble of climate data:
+save(list = c('clim.1999.2016.tb'), file = '~/rwa/data/processed_climate/intermediate_workspaces/clim.1999.2016.tb')
+```
+
+```{r, echo = FALSE}
+load('~/rwa/data/processed_climate/intermediate_workspaces/clim.1999.2016.tb')
+```
+
+The tibble `clim.1999.2016.tb` contains a row for each unique combination of CLNR (Plot Identifier) and Date from the 1st of January 1999 to the 31st of December 2016 and columns for each of the 5 climate variables I will use.
+
+See for example the first 10 rows:
+```{r}
+slice(clim.1999.2016.tb, 1:10)
+```
+and the last 10 rows:
+```{r}
+slice(clim.1999.2016.tb, (n()-10):n())
+```
+
+and a summary of the data:
+```{r}
+summary(clim.1999.2016.tb)
+```
+
+Check for missing data:
+```{r}
+anyNA(clim.1999.2016.tb)
+```
+
+This tibble contains
+```{r}
+formatC(nrow(clim.1999.2016.tb), format = 'e')
+```
+rows and 
+```{r}
+pryr::object_size(clim.1999.2016.tb)
+```
+in RAM.
+
+Plot the temperature data (tave will always be between tmin and tmax so we can keep the plots a bit simpler by just plotting tmin and tmax)
+
+```{r, fig.height=14}
+mutate(clim.1999.2016.tb,
+       Year = lubridate::year(Date.ymd),
+       DOY = lubridate::yday(Date.ymd)) %>%
+  ggplot(aes(x = DOY, ymin = tmin, ymax = tmax, group = CLNR)) +
+    geom_line(aes(y = tmin), colour = 'blue', alpha = 0.01) +
+      geom_line(aes(y = tmax), colour = 'red', alpha = 0.01) +
+        facet_grid(Year ~ .) +
+          theme_bw() +
+            labs(x = 'Day of the Year', y = 'Diurnal Temperature Intervals\nDegrees Celsius')
+```
+
+Plot the precipitation data:
+```{r, fig.height=14}
+mutate(clim.1999.2016.tb,
+       Year = year(Date.ymd),
+       DOY = yday(Date.ymd)) %>%
+  ggplot(aes(x = DOY, y = prcp, group = CLNR)) +
+    geom_line(alpha = 0.1) +
+      facet_grid(Year ~ .) + 
+        theme_bw() +
+          labs(x = 'Day of the Year', y = 'Precipitation (mm)')
+
+```
+
+Plot the solar radiation data:
+```{r, fig.height=14}
+mutate(clim.1999.2016.tb,
+       Year = year(Date.ymd),
+       DOY = yday(Date.ymd)) %>%
+  ggplot(aes(x = DOY, y = srad, group = CLNR)) +
+    geom_line(alpha = 0.1) +
+      facet_grid(Year ~ .)
+```
+
+## 6. Calculate the climate summary statistics for each combination of plot and year
+
+### Calculate the BIOCLIM and ANUCLIM statistics:
+
+In this section I calculate 27 summary statistics for the climate time series closely inspired by the first 27 ANUCLIM statistics(Xu & Hutchinson 2011).  
+The first 27 statistics from ANUCLIM contain the original 19 BIOCLIM statistics (Nix 1986; Busby 1991) with an additional 8 statistics calculated from an insolation time series.
+As noted in the introduction, BIOCLIM and ANUCLIM are calculated from time series of climate data with a weekly or a monthly time step.
+Here I use our climate time series with daily time steps.
+Consequently some of the statistics I calculate differ slightly in definition to the analogue from BIOCLIM or ANUCLIM.
+For ease of comparison I have kept the ANUCLIM numbering system thus `climXX` in the data prepared here is either identical or analogous to the XX\'th ANUCLIM summary statistic.
+
+We can group these statistics into: Annual Statistics, Quarterly Statistics and Monthly Statistics.
+
+#### Annual Statistics:
+
+```{r, eval = TRUE, echo = FALSE}
+tribble(
+~'Name', ~'Full Name', ~'Definition',
+'clim01', 'Annual Mean Temperature', 'Annual Mean of Daily Mean Temperature Values',
+'clim02', 'Mean Diurnal Range', 'Annual Mean of Diurnal Temperature Ranges',
+'clim03', 'Isothermality', 'clim02 divided by clim07',
+'clim04', 'Temperature Seasonality', 'The percentage of the annual mean of daily mean temperature values formed by the annual standard deviation of daily mean temperature values',
+'clim05', 'Annual Maximum Daily Temperature', 'Annual maximum of the daily maximum temperature values', 
+'clim06', 'Annual Minimum Daily Temperature', 'Annual minimum of the daily minimum temperature values',
+'clim07', 'Temperature Annual Range', 'clim05 minus clim06',
+'clim12', 'Annual Precipitation', 'Annual total of the daily precipitation values',
+'clim20', 'Annual Mean Insolation', 'Annual mean of the daily insolation values',
+'clim15d', 'Precipitation Seasonality', 'The standard deviation of the daily precipitation estimates expressed as a percentage of the mean of the daily precipitation values',
+'clim23d', 'Radiation Seasonality', 'The standard deviation of the daily solar radiation estimates expressed as a percentage of the mean of those estimates') %>%
+  knitr::kable(format = 'markdown', caption = 'Annual Summary Statistics')
+```
+Note: `clim04` is calculated from temperatures on the Kelvin scale to avoid the possibility of having to dividing by a mean temperature of zero.
+
+```{r}
+annual.clim.stats.tb <- mutate(clim.1999.2016.tb, Year = lubridate::year(Date.ymd)) %>%
+  group_by(CLNR, Year) %>%
+    summarise(clim01 = mean(tave),
+              clim02 = mean(tmax-tmin),
+              clim04 = 100*sd(tave+273)/mean(tave+273),
+              clim05 = max(tmax),
+              clim06 = min(tmin),
+              clim12 = sum(prcp),
+              clim20 = mean(srad),
+              clim15d = 100*sd(prcp)/mean(prcp),
+              clim23d = 100*sd(srad)/mean(srad)
+              ) %>%
+      mutate(clim07 = clim05 - clim06,
+             clim03 = clim02/clim07
+            )
+```
+
+#### Quarterly Statistics:
+Below I use the rolling (windowed) mean and sum functions from the R package [`RcppRoll`](https://cran.r-project.org/web/packages/RcppRoll/index.html) to identify each of the wettest, driest, hottest and coldest periods of 91 consecutive days (quarters) in each year at each NFI plot.
+For each such quarter I calculate three summary statistics: the mean daily temperature, the total precipitation and the mean insolation. 
+
+**Wettest Quarter**:
+Here I define the wettest quarter of a year as the period of 91 consecutive days in that year with the highest total precipitation. This is the period of 91 consecutive days during which the largest amount of precipitation fell.
+
+Summary statistics calculated for the Wettest Quarter:
+```{r, eval = TRUE, echo = FALSE}
+tribble(
+~'Name', ~'Full Name', ~'Definition',
+'clim08', 'Mean Temperature of the Wettest Quarter', 'The mean daily temperature of the wettest quarter',
+'clim16', 'Total Precipitation of the Wettest Quarter', 'The sum of the daily precipitation values in the wettest quarter',
+'clim24', 'Mean Insolation of the Wettest Quarter', 'The mean daily insolation of the wettest quarter.'
+) %>%
+  knitr::kable()
+```
+
+```{r}
+# window width (days)
+ww <- 91 
+
+wq.step.1 <- mutate(clim.1999.2016.tb, Year = lubridate::year(Date.ymd)) %>%
+  group_by(CLNR, Year) %>%
+    mutate(Day.of.Year = lubridate::yday(Date.ymd)) %>%
+      arrange(Day.of.Year) %>%
+        mutate(prcp.rqs = c(rep(NA,(ww-1)/2), RcppRoll::roll_sum(x = prcp, n = ww), rep(NA,(ww-1)/2)), # rolling quarterly sum
+               wettest.qrtr.cntr = ifelse(prcp.rqs == max(prcp.rqs, na.rm = TRUE), TRUE, FALSE)  # logical: central day of wettest quarter 
+              ) %>%
+          ungroup()
+
+wq.step.2 <- filter(wq.step.1, wettest.qrtr.cntr == TRUE) %>%
+  select(CLNR, Year, Day.of.Year, wettest.qrtr.cntr) %>%
+    rename(WQC.DOY = Day.of.Year)
+
+# wettest quarter summary statistics
+
+wq.ss.tb <- left_join(wq.step.1, wq.step.2, by = c('CLNR', 'Year')) %>% 
+  mutate(Day.Diff = WQC.DOY - Day.of.Year) %>%
+    filter(Day.Diff %in% (-(ww-1)/2):((ww-1)/2)) %>%
+      group_by(CLNR, Year) %>%
+        summarise(clim08 = mean(tave),
+                  clim16 = sum(prcp),
+                  clim24 = mean(srad)
+                 )
+
+slice(wq.ss.tb, 1:10)
+```
+
+test 1:
+```{r}
+x1a <- filter(wq.step.1, Year == 2004 & CLNR == 6) %>%
+  pull(prcp.rqs) %>%
+    max(na.rm = TRUE)
+  
+x1b <- filter(wq.step.1, Year == 2004 & CLNR == 6 & wettest.qrtr.cntr == TRUE) %>%
+  pull(prcp.rqs)
+
+ifelse(x1a == x1b, 'Test Passed', 'Test Failed')
+```
+
+test 2:
+```{r}
+dc <- filter(wq.step.1, Year == 2004 & CLNR == 6 & wettest.qrtr.cntr == TRUE) %>%
+  pull(Day.of.Year)
+
+x1c <- filter(wq.step.1, Year == 2004 &
+                  CLNR == 6 &
+                  Day.of.Year %in% c((dc-45):(dc+45))
+      ) %>%
+  summarise(sum(prcp)) %>%
+    pull()
+
+ifelse((x1c == x1b) & (x1c == x1b), 'Test Passed', 'Test Failed')
+```
+
+**Driest Quarter**
+Here I define the driest quarter of a year as the period of 91 consecutive days in that year with the lowest total precipitation. This is the period of 91 consecutive days during which the least precipitation fell.
+
+Summary statistics calculated for the Driest Quarter:
+```{r, eval = TRUE, echo = FALSE}
+tribble(
+~'Name', ~'Full Name', ~'Definition',
+'clim09', 'Mean Temperature of the Driest Quarter', 'The mean daily temperature of the driest quarter',
+'clim17', 'Total Precipitation of the Driest Quarter', 'The sum of the daily precipitation values in the driest quarter',
+'clim25', 'Mean Insolation of the Driest Quarter', 'The mean daily insolation of the driest quarter.'
+) %>%
+  knitr::kable()
+```
+
+```{r}
+dq.step.1 <- mutate(clim.1999.2016.tb, Year = lubridate::year(Date.ymd)) %>%
+  group_by(CLNR, Year) %>%
+    mutate(Day.of.Year = lubridate::yday(Date.ymd)) %>%
+      arrange(Day.of.Year) %>%
+        mutate(prcp.rqs = c(rep(NA,(ww-1)/2), RcppRoll::roll_sum(x = prcp, n = ww), rep(NA,(ww-1)/2)), # rolling quarterly sum
+               driest.qrtr.cntr = ifelse(prcp.rqs == min(prcp.rqs, na.rm = TRUE), TRUE, FALSE)  # logical: central day of driest quarter 
+              ) %>%
+          ungroup()
+
+dq.step.2 <- filter(dq.step.1, driest.qrtr.cntr == TRUE) %>%
+  select(CLNR, Year, Day.of.Year, driest.qrtr.cntr) %>%
+    rename(DQC.DOY = Day.of.Year)
+
+dq.ss.tb <- left_join(dq.step.1, dq.step.2, by = c('CLNR', 'Year')) %>% # driest quarter summary statistics
+  mutate(Day.Diff = DQC.DOY - Day.of.Year) %>%
+    filter(Day.Diff %in% (-(ww-1)/2):((ww-1)/2)) %>%
+      group_by(CLNR, Year) %>%
+        summarise(clim09 = mean(tave),
+                  clim17 = sum(prcp),
+                  clim25 = mean(srad)
+                 )
+
+slice(dq.ss.tb, 1:10)
+```
+
+**Hottest Quarter**
+Here I define the hottest quarter of a year as the period of 91 consecutive days in that year with the highest average temperature. 
+
+Summary statistics calculated for the Hottest Quarter:
+```{r, eval = TRUE, echo = FALSE}
+tribble(
+~'Name', ~'Full Name', ~'Definition',
+'clim10', 'Mean Temperature of the Hottest Quarter', 'The mean daily temperature of the hottest quarter',
+'clim18', 'Total Precipitation of the Hottest Quarter', 'The sum of the daily precipitation values in the hottest quarter',
+'clim26', 'Mean Insolation of the Hottest Quarter', 'The mean daily insolation of the hottest quarter.'
+) %>%
+  knitr::kable()
+```
+
+
+```{r}
+hq.step.1 <- mutate(clim.1999.2016.tb, Year = lubridate::year(Date.ymd)) %>%
+  group_by(CLNR, Year) %>%
+    mutate(Day.of.Year = lubridate::yday(Date.ymd)) %>%
+      arrange(Day.of.Year) %>%
+        mutate(tave.rqa = c(rep(NA,(ww-1)/2), RcppRoll::roll_mean(x = tave, n = ww), rep(NA,(ww-1)/2)), # rolling quarterly average temperature
+               hottest.qrtr.cntr = ifelse(tave.rqa == max(tave.rqa, na.rm = TRUE), TRUE, FALSE) # logical: central day of hottest quarter 
+              ) %>%
+          ungroup()
+
+hq.step.2 <- filter(hq.step.1, hottest.qrtr.cntr == TRUE) %>%
+  select(CLNR, Year, Day.of.Year, hottest.qrtr.cntr) %>%
+    rename(HQC.DOY = Day.of.Year)
+
+hq.ss.tb <- left_join(hq.step.1, hq.step.2, by = c('CLNR', 'Year')) %>% # hottest quarter summary statistics
+  mutate(Day.Diff = HQC.DOY - Day.of.Year) %>%
+    filter(Day.Diff %in% (-(ww-1)/2):((ww-1)/2)) %>%
+      group_by(CLNR, Year) %>%
+        summarise(clim10 = mean(tave),
+                  clim18 = sum(prcp),
+                  clim26 = mean(srad)
+                 )
+
+slice(hq.ss.tb, 1:10)
+```
+
+**Coldest Quarter**
+Here I define the coldest quarter of a year as the period of 91 consecutive days in that year with the lowest average temperature. 
+
+Summary statistics calculated for the Coldest Quarter:
+```{r, eval = TRUE, echo = FALSE}
+tribble(
+~'Name', ~'Full Name', ~'Definition',
+'clim11', 'Mean Temperature of the Coldest Quarter', 'The mean daily temperature of the coldest quarter',
+'clim19', 'Total Precipitation of the Coldest Quarter', 'The sum of the daily precipitation values in the coldest quarter',
+'clim27', 'Mean Insolation of the Coldest Quarter', 'The mean daily insolation of the coldest quarter.'
+) %>%
+  knitr::kable()
+```
+
+
+```{r}
+cq.step.1 <- mutate(clim.1999.2016.tb, Year = lubridate::year(Date.ymd)) %>%
+  group_by(CLNR, Year) %>%
+    mutate(Day.of.Year = lubridate::yday(Date.ymd)) %>%
+      arrange(Day.of.Year) %>%
+        mutate(tave.rqa = c(rep(NA,(ww-1)/2), RcppRoll::roll_mean(x = tave, n = ww), rep(NA,(ww-1)/2)), # rolling quarterly average temperature
+               coldest.qrtr.cntr = ifelse(tave.rqa == min(tave.rqa, na.rm = TRUE), TRUE, FALSE) # logical: central day of coldest quarter 
+              ) %>%
+          ungroup()
+
+cq.step.2 <- filter(cq.step.1, coldest.qrtr.cntr == TRUE) %>%
+  select(CLNR, Year, Day.of.Year, coldest.qrtr.cntr) %>%
+    rename(CQC.DOY = Day.of.Year)
+
+# coldest quarter summary statistics
+cq.ss.tb <- left_join(cq.step.1, cq.step.2, by = c('CLNR', 'Year')) %>% 
+  mutate(Day.Diff = CQC.DOY - Day.of.Year) %>%
+    filter(Day.Diff %in% (-(ww-1)/2):((ww-1)/2)) %>%
+      group_by(CLNR, Year) %>%
+        summarise(clim11 = mean(tave),
+                  clim19 = sum(prcp),
+                  clim27 = mean(srad)
+                 )
+
+slice(cq.ss.tb, 1:10)
+```
+
+#### Monthly Statistics
+
+* *clim13m = Precipitation of Wettest Period* = precipitation of the wettest month (consecutive 30 days)
+
+```{r}
+m.ww <- 30 # monthly window width
+
+clim13m.tb <- mutate(clim.1999.2016.tb, Year = lubridate::year(Date.ymd)) %>%
+  group_by(CLNR, Year) %>%
+    mutate(Day.of.Year = lubridate::yday(Date.ymd)) %>%
+      arrange(Day.of.Year) %>%
+        mutate(prcp.rms = c(rep(NA, 14), RcppRoll::roll_sum(x = prcp, n = m.ww), rep(NA, 15))) %>% # c(1:14,RS,16:30)
+          summarise(clim13m = max(prcp.rms, na.rm = TRUE))
+
+slice(clim13m.tb, 1:10)
+```
+
+* *clim14m = Precipitation of Driest Period* = precipitation of the driest month (consecutive 30 days)
+
+```{r}
+clim14m.tb <- mutate(clim.1999.2016.tb, Year = lubridate::year(Date.ymd)) %>%
+  group_by(CLNR, Year) %>%
+    mutate(Day.of.Year = lubridate::yday(Date.ymd)) %>%
+      arrange(Day.of.Year) %>%
+        mutate(prcp.rms = c(rep(NA, 14), RcppRoll::roll_sum(x = prcp, n = m.ww), rep(NA, 15))) %>% # c(1:14,RS,16:30)
+          summarise(clim14m = min(prcp.rms, na.rm = TRUE))
+
+slice(clim14m.tb, 1:10)
+```
+
+* *clim21m = Highest Period Radiation* = the largest 30 day rolling mean in solar radiation during the year
+
+```{r}
+clim21m.tb <- mutate(clim.1999.2016.tb, Year = lubridate::year(Date.ymd)) %>%
+  group_by(CLNR, Year) %>%
+    mutate(Day.of.Year = lubridate::yday(Date.ymd)) %>%
+      arrange(Day.of.Year) %>%
+        mutate(srad.rms = c(rep(NA, 14), RcppRoll::roll_mean(x = srad, n = m.ww), rep(NA, 15))) %>% # c(1:14,RS,16:30)
+          summarise(clim21m = max(srad.rms, na.rm = TRUE))
+
+slice(clim21m.tb, 1:10)
+```
+
+* *clim22m = Lowest Period Radiation* = the lowest 30 day rolling mean in solar radiation during the year
+
+```{r}
+clim22m.tb <- mutate(clim.1999.2016.tb, Year = lubridate::year(Date.ymd)) %>%
+  group_by(CLNR, Year) %>%
+    mutate(Day.of.Year = lubridate::yday(Date.ymd)) %>%
+      arrange(Day.of.Year) %>%
+        mutate(srad.rms = c(rep(NA, 14), RcppRoll::roll_mean(x = srad, n = m.ww), rep(NA, 15))) %>% # c(1:14,RS,16:30)
+          summarise(clim22m = min(srad.rms, na.rm = TRUE))
+
+slice(clim22m.tb, 1:10)
+```
+
+Join the tibbles of climate summary statistics that I have created above to create a single tibble (`clim.tb`) that contains `clim01` to `clim27` for all NFI Plots and all years.
+
+```{r}
+clim.tb <- list(annual.clim.stats.tb,
+                wq.ss.tb,
+                dq.ss.tb,
+                hq.ss.tb,
+                cq.ss.tb,
+                clim13m.tb,
+                clim14m.tb,
+                clim21m.tb,
+                clim22m.tb) %>%
+  purrr::reduce(.x = ., .f = full_join, by = c('CLNR', 'Year'))
+
+sort(colnames(clim.tb))
+```
+
+```{r}
+slice(clim.tb, 1:10)
+```
+
+### BIOCLIM Style Interval Based Statistics for Active & Dormant Periods
+
+#### Active Period:
+
+*Active/Foraging Period:* April to October
+
+```{r, eval = TRUE, echo = FALSE}
+tribble(
+~'Name', ~'Full Name', ~'Definition',
+'ap.mean.temp', 'Mean Temperature of the Active Period', 'The mean daily temperature of the active period',
+'ap.tot.prcp', 'Precipitation over the Active Period', 'The sum of the daily precipitation values over the active period',
+'ap.mean.srad', 'Mean Daily Insolation of the Active Period', 'The mean daily insolation of the active period',
+'ap.sd.temp', 'Temperature Standard Deviation during the Active Period', 'Standard Deviation of Daily Average Temperatures during the Active Period',
+'ap.sd.prcp', 'Precipitation Standard Deviation over the Active Period', 'Standard Deviation of Daily Precipitation over the Active Period',
+'ap.sd.srad', 'Insolation Standard Deviation over the Active Period', 'Standard Deviation of Daily Insolation of over the Active Period'
+) %>%
+  knitr::kable()
+```
+
+```{r}
+ap.clim.ss.tb <- mutate(clim.1999.2016.tb,    # active period climate summary statistics tibble
+                        Year = lubridate::year(Date.ymd),
+                        Month = lubridate::month(Date.ymd)) %>%
+  filter(Month %in% 4:10) %>%
+    group_by(CLNR, Year) %>%
+      summarise(
+        ap.mean.temp = mean(tave),
+        ap.tot.prcp  = sum(prcp),
+        ap.mean.srad = mean(srad),
+        ap.sd.temp   =  sd(tave),
+        ap.sd.prcp   =  sd(prcp),
+        ap.sd.srad   =  sd(srad)
+      ) 
+
+slice(ap.clim.ss.tb, 1:10)                        
+```
+
+#### Dormant Period:
+
+*Dormant Period:* November to May
+
+Note: each winter spans two years.
+
+```{r, eval = TRUE, echo = FALSE}
+tribble(
+~'Name', ~'Full Name', ~'Definition',
+'dp.mean.temp', 'Mean Temperature of the Dormant Period', 'The mean daily temperature of the dormant period',
+'dp.tot.prcp', 'Precipitation over the Dormant Period', 'The sum of the daily precipitation values over the dormant period',
+'dp.mean.srad', 'Mean Daily Insolation of the Dormant Period', 'The mean daily insolation of the dormant period',
+'dp.sd.temp', 'Temperature Standard Deviation during the Dormant Period', 'Standard Deviation of Daily Average Temperatures during the Dormant Period',
+'dp.sd.prcp', 'Precipitation Standard Deviation over the Dormant Period', 'Standard Deviation of Daily Precipitation over the Dormant Period',
+'dp.sd.srad', 'Insolation Standard Deviation over the Dormant Period', 'Standard Deviation of Daily Insolation of over the Dormant Period'
+
+) %>%
+  knitr::kable()
+```
+
+```{r}
+dp.clim.ss.tb <- mutate(clim.1999.2016.tb,    # dormant period climate summary statistics tibble
+                        Year = lubridate::year(Date.ymd),
+                        Month = lubridate::month(Date.ymd)) %>%
+  filter(Month %in% c(1:3, 11:12)) %>%
+    group_by(CLNR) %>%
+      arrange(Year) %>%
+        mutate(year.number = Year - min(Year) + 1,
+               winter.number = case_when(Month %in% 1:3 ~ year.number,
+                                         Month %in% 11:12 ~ year.number + 1
+                                        )
+        ) %>%
+          ungroup() %>%
+            group_by(CLNR, winter.number) %>%
+              summarise(
+                dp.mean.temp = mean(tave),
+                dp.tot.prcp  = sum(prcp),
+                dp.mean.srad = mean(srad),
+                dp.sd.temp   =  sd(tave),
+                dp.sd.prcp   =  sd(prcp),
+                dp.sd.srad   =  sd(srad),                
+                winter.start.year = min(Year)
+              ) 
+
+slice(dp.clim.ss.tb, 1:10)
+```
+
+```{r}
+summary(dp.clim.ss.tb)
+```
+
+### Climate Effects on Ants' Foraging
+
+Anita and I have devised a summary statistic for the amount of time during the active period when the weather would limit foraging. This being the number of days between April and October that have one or two of the following characteristics:
+
+ * maximum temperature <= 5 C
+
+ * precipitation > 5 mm
+
+ * maximum temperature > 30 C
+
+```{r,fig.height=12}
+Forage.Restr.Days.tb <- mutate(clim.1999.2016.tb, 
+  Year = lubridate::year(Date.ymd),
+  Month = lubridate::month(Date.ymd)
+) %>%
+  filter(Month %in% (4:10)) %>%
+    mutate(FR = case_when( (tmax <= 5) | (prcp > 5)  | (tmax > 30) ~ 1,
+                           (tmax >  5) & (prcp <= 5) & (tmax <= 30) ~ 0
+                         )
+          ) %>% 
+      group_by(Year, CLNR) %>%
+        summarise(FRD = sum(FR))
+```
+
+Check all days assigned either a `1` or a `0` in FR
+```{r}
+ifelse(anyNA(Forage.Restr.Days.tb$FRD), 'Checked Failed', 'Check Passed')
+```
+
+Plot the distribution of Foraging Restricted Days each year:
+```{r, fig.height=14}
+ggplot(data = Forage.Restr.Days.tb, aes(x = FRD, y = ..density..)) +
+  geom_histogram() +
+    facet_grid(Year~.) +
+      labs(x = 'Days with Foraging Restricting Weather')
+```
+
+Save an intermediate workspace:
+```{r, eval = FALSE}
+save(list = c('clim.tb', 'ap.clim.ss.tb', 'dp.clim.ss.tb', 'Forage.Restr.Days.tb'),
+     file = '~/rwa/data/processed_climate/intermediate_workspaces/clim.1999.2016.ss.tb')
+```
+
+## 7. Summarise the values of the climate summary statistics for the periods of 1, 5 and 10 years prior to the years in which plots were searched for ants
+
+Create a tibble with the Plot ID (CLNR) and the year of sampling (Ant.Year):
+```{r}
+Ant.YOS.tb <- mutate(Plot.Crd.VT.tb, Ant.Year = lubridate::year(SAMPLETIME)) %>%
+  select(CLNR, Ant.Year)
+  
+summary(Ant.YOS.tb)
+```
+
+### Climate summary statistics for the year preceeding the year of ant sampling:
+
+```{r}
+prejoin.clim.tb <- rename(clim.tb,
+                          Clim.Year = Year) %>%
+  mutate(Ant.Year = Clim.Year + 1)
+
+amy.clim.tb <- left_join(x = Ant.YOS.tb, y = prejoin.clim.tb, by = c('CLNR', 'Ant.Year'))
+```
+
+```{r}
+prejoin.dp.clim.tb <- mutate(dp.clim.ss.tb, Ant.Year = winter.start.year + 1)
+
+amy.dp.clim.tb <- left_join(x = Ant.YOS.tb, y = prejoin.dp.clim.tb, by = c('CLNR', 'Ant.Year'))
+```
+
+```{r}
+prejoin.ap.clim.tb <- rename(ap.clim.ss.tb,
+                             Clim.Year = Year) %>%
+  mutate(Ant.Year = Clim.Year + 1)
+
+amy.ap.clim.tb <- left_join(x = Ant.YOS.tb, y = prejoin.ap.clim.tb, by = c('CLNR', 'Ant.Year'))
+
+amy.ap.clim.tb
+```
+
+```{r}
+prejoin.Forage.Restr.Days.tb <- rename(Forage.Restr.Days.tb,
+                                       Clim.Year = Year) %>%
+  mutate(Ant.Year = Clim.Year + 1)
+
+amy.frd.clim.tb <- left_join(x = Ant.YOS.tb, y = prejoin.Forage.Restr.Days.tb, by = c('CLNR', 'Ant.Year')) %>%
+  rename(FRD = FRD)
+
+anyNA(amy.frd.clim.tb$FRD)
+
+summary(amy.frd.clim.tb$FRD)
+```
+
+Join the 1 year summary statistics:
+
+```{r}
+climate.previous.year.tb <- purrr::reduce(.x = list(tb.1 = select(amy.clim.tb, -Clim.Year),
+                                                    tb.2 = select(amy.dp.clim.tb, -winter.number, -winter.start.year), 
+                                                    tb.3 = select(amy.ap.clim.tb, -Clim.Year),
+                                                    tb.4 = select(amy.frd.clim.tb, -Clim.Year)
+                                                   ),
+                                          .f = full_join,
+                                          by = c('CLNR', 'Ant.Year')
+                                          )
+```
+
+### Summary statistics of the values of the annual climate summary statistics for the 5 year period preceeding the year of ant sampling
+
+```{r}
+prejoin.clim.5yr.tb <- rename(clim.tb,
+                              Clim.Year = Year)
+
+amy.clim.5yr.tb <- left_join(x = prejoin.clim.5yr.tb, y = Ant.YOS.tb, by = 'CLNR') %>%
+  group_by(CLNR) %>%
+    mutate(Year.Diff = Ant.Year - Clim.Year) %>%
+      filter(Year.Diff >= 1 & Year.Diff < 6) %>%
+        summarise(
+          clim01.5yr.mean  = mean(clim01),
+          clim02.5yr.mean  = mean(clim02),
+          clim03.5yr.mean  = mean(clim03),
+          clim04.5yr.mean  = mean(clim04), 
+          clim05.5yr.mean  = mean(clim05),
+          clim06.5yr.mean  = mean(clim06),
+          clim07.5yr.mean  = mean(clim07), 
+          clim08.5yr.mean  = mean(clim08),
+          clim09.5yr.mean  = mean(clim09),
+          clim10.5yr.mean  = mean(clim10),
+          clim11.5yr.mean  = mean(clim11),
+          clim12.5yr.mean  = mean(clim12),
+          clim13m.5yr.mean = mean(clim13m),
+          clim14m.5yr.mean = mean(clim14m),
+          clim15d.5yr.mean = mean(clim15d),
+          clim16.5yr.mean  = mean(clim16),
+          clim17.5yr.mean  = mean(clim17),
+          clim18.5yr.mean  = mean(clim18),
+          clim19.5yr.mean  = mean(clim19),
+          clim20.5yr.mean  = mean(clim20),
+          clim21m.5yr.mean = mean(clim21m),
+          clim22m.5yr.mean = mean(clim22m),
+          clim23d.5yr.mean = mean(clim23d),
+          clim24.5yr.mean  = mean(clim24),
+          clim25.5yr.mean  = mean(clim25),
+          clim26.5yr.mean  = mean(clim26),
+          clim27.5yr.mean  = mean(clim27),
+          clim01.5yr.var  = var(clim01),
+          clim02.5yr.var  = var(clim02),
+          clim03.5yr.var  = var(clim03),
+          clim04.5yr.var  = var(clim04),
+          clim05.5yr.var  = var(clim05),
+          clim06.5yr.var  = var(clim06),
+          clim07.5yr.var  = var(clim07), 
+          clim08.5yr.var  = var(clim08),
+          clim09.5yr.var  = var(clim09),
+          clim10.5yr.var  = var(clim10),
+          clim11.5yr.var  = var(clim11),
+          clim12.5yr.var  = var(clim12),
+          clim13m.5yr.var = var(clim13m),
+          clim14m.5yr.var = var(clim14m),
+          clim15d.5yr.var = var(clim15d),
+          clim16.5yr.var  = var(clim16),
+          clim17.5yr.var  = var(clim17),
+          clim18.5yr.var  = var(clim18),
+          clim19.5yr.var  = var(clim19),
+          clim20.5yr.var  = var(clim20),
+          clim21m.5yr.var = var(clim21m),
+          clim22m.5yr.var = var(clim22m),
+          clim23d.5yr.var = var(clim23d),
+          clim24.5yr.var  = var(clim24),
+          clim25.5yr.var  = var(clim25),
+          clim26.5yr.var  = var(clim26),
+          clim27.5yr.var  = var(clim27),
+          clim01.5yr.min  = min(clim01),
+          clim02.5yr.min  = min(clim02),
+          clim03.5yr.min  = min(clim03),
+          clim04.5yr.min  = min(clim04),
+          clim05.5yr.min  = min(clim05),
+          clim06.5yr.min  = min(clim06),
+          clim07.5yr.min  = min(clim07), 
+          clim08.5yr.min  = min(clim08),
+          clim09.5yr.min  = min(clim09),
+          clim10.5yr.min  = min(clim10),
+          clim11.5yr.min  = min(clim11),
+          clim12.5yr.min  = min(clim12),
+          clim13m.5yr.min = min(clim13m),
+          clim14m.5yr.min = min(clim14m),
+          clim15d.5yr.min = min(clim15d),
+          clim16.5yr.min  = min(clim16),
+          clim17.5yr.min  = min(clim17),
+          clim18.5yr.min  = min(clim18),
+          clim19.5yr.min  = min(clim19),
+          clim20.5yr.min  = min(clim20),
+          clim21m.5yr.min = min(clim21m),
+          clim22m.5yr.min = min(clim22m),
+          clim23d.5yr.min = min(clim23d),
+          clim24.5yr.min  = min(clim24),
+          clim25.5yr.min  = min(clim25),
+          clim26.5yr.min  = min(clim26),
+          clim27.5yr.min  = min(clim27), 
+          clim01.5yr.max  = max(clim01),
+          clim02.5yr.max  = max(clim02),
+          clim03.5yr.max  = max(clim03),
+          clim04.5yr.max  = max(clim04),
+          clim05.5yr.max  = max(clim05),
+          clim06.5yr.max  = max(clim06),
+          clim07.5yr.max  = max(clim07), 
+          clim08.5yr.max  = max(clim08),
+          clim09.5yr.max  = max(clim09),
+          clim10.5yr.max  = max(clim10),
+          clim11.5yr.max  = max(clim11),
+          clim12.5yr.max  = max(clim12),
+          clim13m.5yr.max = max(clim13m),
+          clim14m.5yr.max = max(clim14m),
+          clim15d.5yr.max = max(clim15d),
+          clim16.5yr.max  = max(clim16),
+          clim17.5yr.max  = max(clim17),
+          clim18.5yr.max  = max(clim18),
+          clim19.5yr.max  = max(clim19),
+          clim20.5yr.max  = max(clim20),
+          clim21m.5yr.max = max(clim21m),
+          clim22m.5yr.max = max(clim22m),
+          clim23d.5yr.max = max(clim23d),
+          clim24.5yr.max  = max(clim24),
+          clim25.5yr.max  = max(clim25),
+          clim26.5yr.max  = max(clim26),
+          clim27.5yr.max  = max(clim27)
+        )  
+    
+```
+
+```{r}
+amy.dp.clim.5yr.tb <- left_join(x = dp.clim.ss.tb, y = Ant.YOS.tb, by = 'CLNR') %>%
+  group_by(CLNR) %>%
+    mutate(Year.Diff = Ant.Year - winter.start.year) %>%
+      filter(Year.Diff >= 1 & Year.Diff < 6) %>%
+        summarise(
+          dp.mean.temp.5yr.mean = mean(dp.mean.temp),
+          dp.tot.prcp.5yr.mean   = mean(dp.tot.prcp),
+          dp.mean.srad.5yr.mean   = mean(dp.mean.srad),
+          dp.mean.temp.5yr.var = var(dp.mean.temp),
+          dp.tot.prcp.5yr.var   = var(dp.tot.prcp),
+          dp.mean.srad.5yr.var   = var(dp.mean.srad),
+          dp.mean.temp.5yr.min = min(dp.mean.temp),
+          dp.tot.prcp.5yr.min   = min(dp.tot.prcp),
+          dp.mean.srad.5yr.min   = min(dp.mean.srad),
+          dp.mean.temp.5yr.max = max(dp.mean.temp),
+          dp.tot.prcp.5yr.max   = max(dp.tot.prcp),
+          dp.mean.srad.5yr.max   = max(dp.mean.srad)
+        )
+```
+
+```{r}
+amy.ap.clim.5yr.tb <- rename(ap.clim.ss.tb, Clim.Year = Year) %>%
+  left_join(x = ., y = Ant.YOS.tb, by = 'CLNR') %>%
+    group_by(CLNR) %>%
+      mutate(Year.Diff = Ant.Year - Clim.Year) %>%
+        filter(Year.Diff >= 1 & Year.Diff < 6) %>%
+          summarise(
+            ap.mean.temp.5yr.mean = mean(ap.mean.temp),
+            ap.tot.prcp.5yr.mean   = mean(ap.tot.prcp),
+            ap.mean.srad.5yr.mean   = mean(ap.mean.srad),
+            ap.mean.temp.5yr.var = var(ap.mean.temp),
+            ap.tot.prcp.5yr.var   = var(ap.tot.prcp),
+            ap.mean.srad.5yr.var   = var(ap.mean.srad),
+            ap.mean.temp.5yr.min = min(ap.mean.temp),
+            ap.tot.prcp.5yr.min   = min(ap.tot.prcp),
+            ap.mean.srad.5yr.min   = min(ap.mean.srad),
+            ap.mean.temp.5yr.max = max(ap.mean.temp),
+            ap.tot.prcp.5yr.max   = max(ap.tot.prcp),
+            ap.mean.srad.5yr.max   = max(ap.mean.srad)
+          )                
+```
+
+```{r}
+amy.frd.clim.5yr.tb <- rename(Forage.Restr.Days.tb,
+                              Clim.Year = Year) %>%
+    left_join(x = ., y = Ant.YOS.tb, by = 'CLNR') %>%
+      group_by(CLNR) %>%
+        mutate(Year.Diff = Ant.Year - Clim.Year) %>%
+          filter(Year.Diff >= 1 & Year.Diff < 6) %>%
+            summarise(FRD.5yr.mean = mean(FRD),
+                      FRD.5yr.var  = var(FRD),
+                      FRD.5yr.min  = min(FRD),
+                      FRD.5yr.max  = max(FRD)
+                     )
+```
+
+Join the 5 year Summaries:
+
+```{r}
+climate.5yr.summaries.tb <- purrr::reduce(.x = list(tb.1 = amy.clim.5yr.tb,
+                                                    tb.2 = amy.dp.clim.5yr.tb,
+                                                    tb.3 = amy.ap.clim.5yr.tb,
+                                                    tb.4 = amy.frd.clim.5yr.tb
+                                                   ),
+                                          .f = full_join,
+                                          by = 'CLNR')
+```
+
+### Summary statistics of the values of the annual climate summary statistics for the 10 year period preceeding the year of ant sampling
+
+```{r}
+prejoin.clim.10yr.tb <- rename(clim.tb,
+                               Clim.Year = Year)
+
+amy.clim.10yr.tb <- left_join(x = prejoin.clim.10yr.tb, y = Ant.YOS.tb, by = 'CLNR') %>%
+      group_by(CLNR) %>%
+        mutate(Year.Diff = Ant.Year - Clim.Year) %>%
+          filter(Year.Diff >= 1 & Year.Diff < 11) %>%
+            summarise(
+              clim01.10yr.mean  = mean(clim01),
+              clim02.10yr.mean  = mean(clim02),
+              clim03.10yr.mean  = mean(clim03),
+              clim04.10yr.mean  = mean(clim04), 
+              clim05.10yr.mean  = mean(clim05),
+              clim06.10yr.mean  = mean(clim06),
+              clim07.10yr.mean  = mean(clim07), 
+              clim08.10yr.mean  = mean(clim08),
+              clim09.10yr.mean  = mean(clim09),
+              clim10.10yr.mean  = mean(clim10),
+              clim11.10yr.mean  = mean(clim11),
+              clim12.10yr.mean  = mean(clim12),
+              clim13m.10yr.mean = mean(clim13m),
+              clim14m.10yr.mean = mean(clim14m),
+              clim15d.10yr.mean = mean(clim15d),
+              clim16.10yr.mean  = mean(clim16),
+              clim17.10yr.mean  = mean(clim17),
+              clim18.10yr.mean  = mean(clim18),
+              clim19.10yr.mean  = mean(clim19),
+              clim20.10yr.mean  = mean(clim20),
+              clim21m.10yr.mean = mean(clim21m),
+              clim22m.10yr.mean = mean(clim22m),
+              clim23d.10yr.mean = mean(clim23d),
+              clim24.10yr.mean  = mean(clim24),
+              clim25.10yr.mean  = mean(clim25),
+              clim26.10yr.mean  = mean(clim26),
+              clim27.10yr.mean  = mean(clim27),
+              clim01.10yr.var  = var(clim01),
+              clim02.10yr.var  = var(clim02),
+              clim03.10yr.var  = var(clim03),
+              clim04.10yr.var  = var(clim04),
+              clim05.10yr.var  = var(clim05),
+              clim06.10yr.var  = var(clim06),
+              clim07.10yr.var  = var(clim07), 
+              clim08.10yr.var  = var(clim08),
+              clim09.10yr.var  = var(clim09),
+              clim10.10yr.var  = var(clim10),
+              clim11.10yr.var  = var(clim11),
+              clim12.10yr.var  = var(clim12),
+              clim13m.10yr.var = var(clim13m),
+              clim14m.10yr.var = var(clim14m),
+              clim15d.10yr.var = var(clim15d),
+              clim16.10yr.var  = var(clim16),
+              clim17.10yr.var  = var(clim17),
+              clim18.10yr.var  = var(clim18),
+              clim19.10yr.var  = var(clim19),
+              clim20.10yr.var  = var(clim20),
+              clim21m.10yr.var = var(clim21m),
+              clim22m.10yr.var = var(clim22m),
+              clim23d.10yr.var = var(clim23d),
+              clim24.10yr.var  = var(clim24),
+              clim25.10yr.var  = var(clim25),
+              clim26.10yr.var  = var(clim26),
+              clim27.10yr.var  = var(clim27),
+              clim01.10yr.min  = min(clim01),
+              clim02.10yr.min  = min(clim02),
+              clim03.10yr.min  = min(clim03),
+              clim04.10yr.min  = min(clim04),
+              clim05.10yr.min  = min(clim05),
+              clim06.10yr.min  = min(clim06),
+              clim07.10yr.min  = min(clim07), 
+              clim08.10yr.min  = min(clim08),
+              clim09.10yr.min  = min(clim09),
+              clim10.10yr.min  = min(clim10),
+              clim11.10yr.min  = min(clim11),
+              clim12.10yr.min  = min(clim12),
+              clim13m.10yr.min = min(clim13m),
+              clim14m.10yr.min = min(clim14m),
+              clim15d.10yr.min = min(clim15d),
+              clim16.10yr.min  = min(clim16),
+              clim17.10yr.min  = min(clim17),
+              clim18.10yr.min  = min(clim18),
+              clim19.10yr.min  = min(clim19),
+              clim20.10yr.min  = min(clim20),
+              clim21m.10yr.min = min(clim21m),
+              clim22m.10yr.min = min(clim22m),
+              clim23d.10yr.min = min(clim23d),
+              clim24.10yr.min  = min(clim24),
+              clim25.10yr.min  = min(clim25),
+              clim26.10yr.min  = min(clim26),
+              clim27.10yr.min  = min(clim27), 
+              clim01.10yr.max  = max(clim01),
+              clim02.10yr.max  = max(clim02),
+              clim03.10yr.max  = max(clim03),
+              clim04.10yr.max  = max(clim04),
+              clim05.10yr.max  = max(clim05),
+              clim06.10yr.max  = max(clim06),
+              clim07.10yr.max  = max(clim07), 
+              clim08.10yr.max  = max(clim08),
+              clim09.10yr.max  = max(clim09),
+              clim10.10yr.max  = max(clim10),
+              clim11.10yr.max  = max(clim11),
+              clim12.10yr.max  = max(clim12),
+              clim13m.10yr.max = max(clim13m),
+              clim14m.10yr.max = max(clim14m),
+              clim15d.10yr.max = max(clim15d),
+              clim16.10yr.max  = max(clim16),
+              clim17.10yr.max  = max(clim17),
+              clim18.10yr.max  = max(clim18),
+              clim19.10yr.max  = max(clim19),
+              clim20.10yr.max  = max(clim20),
+              clim21m.10yr.max = max(clim21m),
+              clim22m.10yr.max = max(clim22m),
+              clim23d.10yr.max = max(clim23d),
+              clim24.10yr.max  = max(clim24),
+              clim25.10yr.max  = max(clim25),
+              clim26.10yr.max  = max(clim26),
+              clim27.10yr.max  = max(clim27)
+            )      
+```
+
+```{r}
+amy.dp.clim.10yr.tb <- left_join(x = dp.clim.ss.tb, y = Ant.YOS.tb, by = 'CLNR') %>%
+      group_by(CLNR) %>%
+        mutate(Year.Diff = Ant.Year - winter.start.year) %>%
+          filter(Year.Diff >= 1 & Year.Diff < 11) %>%
+            summarise(
+                dp.mean.temp.10yr.mean = mean(dp.mean.temp),
+                dp.tot.prcp.10yr.mean  = mean(dp.tot.prcp),
+                dp.mean.srad.10yr.mean  = mean(dp.mean.srad),
+                dp.mean.temp.10yr.var  = var(dp.mean.temp),
+                dp.tot.prcp.10yr.var   = var(dp.tot.prcp),
+                dp.mean.srad.10yr.var   = var(dp.mean.srad),
+                dp.mean.temp.10yr.min  = min(dp.mean.temp),
+                dp.tot.prcp.10yr.min   = min(dp.tot.prcp),
+                dp.mean.srad.10yr.min   = min(dp.mean.srad),
+                dp.mean.temp.10yr.max  = max(dp.mean.temp),
+                dp.tot.prcp.10yr.max   = max(dp.tot.prcp),
+                dp.mean.srad.10yr.max   = max(dp.mean.srad)
+            )
+```
+
+```{r}
+amy.ap.clim.10yr.tb <- rename(ap.clim.ss.tb, Clim.Year = Year) %>%
+  left_join(x = ., y = Ant.YOS.tb, by = 'CLNR') %>%
+    group_by(CLNR) %>%
+      mutate(Year.Diff = Ant.Year - Clim.Year) %>%
+        filter(Year.Diff >= 1 & Year.Diff < 11) %>%
+          summarise(
+            ap.mean.temp.10yr.mean = mean(ap.mean.temp),
+            ap.tot.prcp.10yr.mean  = mean(ap.tot.prcp),
+            ap.mean.srad.10yr.mean = mean(ap.mean.srad),
+            ap.mean.temp.10yr.var  = var(ap.mean.temp),
+            ap.tot.prcp.10yr.var   = var(ap.tot.prcp),
+            ap.mean.srad.10yr.var  = var(ap.mean.srad),
+            ap.mean.temp.10yr.min  = min(ap.mean.temp),
+            ap.tot.prcp.10yr.min   = min(ap.tot.prcp),
+            ap.mean.srad.10yr.min  = min(ap.mean.srad),
+            ap.mean.temp.10yr.max  = max(ap.mean.temp),
+            ap.tot.prcp.10yr.max   = max(ap.tot.prcp),
+            ap.mean.srad.10yr.max  = max(ap.mean.srad)
+          )                
+```
+
+```{r}
+amy.frd.clim.10yr.tb <- rename(Forage.Restr.Days.tb,
+                               Clim.Year = Year) %>%
+    left_join(x = ., y = Ant.YOS.tb, by = 'CLNR') %>%
+      group_by(CLNR) %>%
+        mutate(Year.Diff = Ant.Year - Clim.Year) %>%
+          filter(Year.Diff >= 1 & Year.Diff < 11) %>%
+            summarise(FRD.10yr.mean = mean(FRD),
+                      FRD.10yr.var  = var(FRD),
+                      FRD.10yr.min  = min(FRD),
+                      FRD.10yr.max  = max(FRD)
+                     )
+```
+
+Join the 10 year Summaries:
+
+```{r}
+climate.10yr.summaries.tb <- purrr::reduce(.x = list(tb.1 = amy.clim.10yr.tb,
+                                                     tb.2 = amy.dp.clim.10yr.tb,
+                                                     tb.3 = amy.ap.clim.10yr.tb,
+                                                     tb.4 = amy.frd.clim.10yr.tb
+                                                   ),
+                                          .f = full_join,
+                                          by = 'CLNR')
+```
+
+## 8. Join all tibbles of climate summary statistics
+
+```{r}
+climate.summaries.tb <- purrr::reduce(.x = list(tb.1 = climate.previous.year.tb,
+                                                tb.2 = climate.5yr.summaries.tb,
+                                                tb.3 = climate.10yr.summaries.tb
+                                               ),
+                                      .f = full_join,
+                                      by = 'CLNR')
+```
+
+```{r, eval = FALSE}
+save(list = 'climate.summaries.tb', file = '~/rwa/data/processed_climate/climate.summaries.tb')
+```
+
+```{r}
+pryr::object_size(climate.summaries.tb)
+```
+
+# Update this table to include all explantory variables
+
+```{r, eval = TRUE, echo = FALSE}
+tribble(
+~Acronym, ~Description,
+
+'ap.mean.temp.10yr.var', 'The variance of the average daily temperatures during the active periods of the 10 years prior to the year in which the ants were sampled.',
+
+'ap.tot.prcp.10yr.var' , 'The variance of the total precipitation that fell during the active periods of the 10 years prior to the year in which the ants were sampled.',
+
+'ap.mean.srad.10yr.var', 'The variance of the means of daily insolation values from the active periods of the 10 year period prior to the year in which the ants were sampled',
+
+'ap.mean.temp.5yr.var' , 'The variance of the means of the daily average temperatures from the active periods of the 10 year period prior to the year in which the ants were sampled',
+
+'ap.tot.prcp.5yr.var'  , 'The variance of the total precipitation values from the active periods of the five year period that preceded the year in which the ants were sampled',
+
+'ap.mean.srad.5yr.var' , 'The variance of the means of insolation values over the active periods of the five year period that preceded the year in which the ants were sampled',
+
+'ap.tot.prcp.5yr.max'  , 'The maximum of the total precipitation values from the active periods of the five years prior to the year in which the ants were sampled',
+
+'dp.tot.prcp'          , 'Total precipitation during the dormant period prior to the ant sampling' ,
+
+'dp.sd.temp'           , 'Standard Deviation of Daily Averages Temperatures during the dormant period prior to the ant sampling',
+
+'dp.sd.prcp'           , 'Standard Deviation of Daily Precipitation During the dormant period prior to the ant sampling',
+
+'dp.sd.srad'           , 'Standard Deviation of daily insolation during the dormant period prior to the ant sampling',
+
+'ap.tot.prcp'          , 'Total precipitation during the active period prior to the ant sampling',
+
+'ap.sd.temp'           , 'Standard deviation of daily average temperatures during the active period prior to the ant sampling',
+
+'ap.sd.prcp'           , 'Standard deviation of daily precipitation during the active period prior to the ant sampling',
+
+'dp.mean.temp.5yr.mean', 'Mean of the mean daily temperature values from the dormant periods of the five years that preceded the year in which the ants were sampled',
+
+'dp.tot.prcp.5yr.mean' , 'Mean of the total precipitation values from the dormant periods of the five years that preceded the year in which the ants were sampled',
+
+'dp.mean.temp.5yr.var' , 'Variance of the means of daily average temperatures from the dormant periods of the five years that preceded the year in which the ants were sampled',
+
+'dp.tot.prcp.5yr.var'  , 'Variance of the total precipitation values from the dormant periods of the five years that preceded the year in which the ants were sampled',
+
+'dp.mean.srad.5yr.var' , 'Variance of the means of the daily insolation values from the dormant periods of the five years that preceded the year in which the ants were sampled',
+
+'dp.tot.prcp.5yr.min'  , 'The minimum total precipitation value for a dormant period from the five years that preceded the year in which the ants were sampled',
+
+'dp.tot.prcp.5yr.max'  , 'The maximum total precipitation value for a dormant period from the five years that preceded the year in which the ants were sampled',
+
+'dp.mean.temp.10yr.var', 'The variance of the means of the daily average temperature values from the dormant periods of the ten years that preceded the year in which the ants were sampled',
+
+'dp.tot.prcp.10yr.var' , 'The variance of the total precipitation values from the dormant periods of the ten years that preceded the year in which the ants were sample',
+
+'dp.mean.srad.10yr.var', 'The variance of the means of the daily insolation values from the dormant periods of the ten years prior to the year in which the ants were sampled',
+
+'dp.tot.prcp.10yr.min' , 'The minimum total precipitation from a dormant period in the ten years prior to the year in which the ants were sampled',
+
+'dp.tot.prcp.10yr.max' , 'The maximum total precipitation from a dormant period in the ten years prior to the year in which the ants were sampled',
+
+'dp.mean.srad.10yr.max', 'The maximum of the means of daily insolation values from the dormant periods of the ten years prior to the year in which the ants were sampled',
+
+'FRD'                  , 'Number of days with weather conditions we class as restrictive to ant foraging in the active period prior to the ant sampling',
+
+'FRD.5yr.var'          , 'The variance of FRD values from the five year period immediately prior to the year in which ants were sampled',
+
+'FRD.5yr.min'          , 'The minimum FRD value from the five year period immediately prior to the year in which ants were sampled',
+
+'FRD.5yr.max'          , 'The maximum FRD value from the five year period immediately prior to the year in which ants were sampled',
+
+'FRD.10yr.var'         , 'The variance of FRD values from the ten year period immediately prior to the year in which ants were sampled',
+
+'FRD.10yr.max'         , 'The maximum FRD value from the five year period immediately prior to the year in which ants were sampled',
+
+'clim02'               , 'Annual Mean of Daily Diurnal Temperature Ranges from the year preceeding the year in which the ants were sampled',
+
+'clim04'               , 'The percentage of the annual mean of daily mean temperature values formed by the annual standard deviation of daily mean temperature values from the year that preceded the year in which the ants were sampled',
+
+'clim05'               , 'Annual maximum of the daily maximum temperature values from the year that preceded the year in which the ants were sampled',
+
+'clim12'               , 'Annual total of the daily precipitation values from the year that preceded the year in which the ants were sampled',
+
+'clim07'               , 'Temperature Annual Range from the year that preceded the year in which the ants were sampled',
+
+'clim03'               , 'Isothermality: clim02 divided by clim07',
+
+'clim08'               , 'The mean daily temperature of the wettest quarter of the year that preceded the year in which the ants were sampled',
+
+'clim16'               , 'The sum of the daily precipitation values from the wettest quarter of the year that preceded the year in which the ants were sampled',
+
+'clim24'               , 'The mean daily insolation of the wettest quarter of the year that preceded the year in which the ants were sampled.',
+
+'clim09'               , 'The mean daily temperature of the driest quarter of the year that preceded the year in which the ants were sampled',
+
+'clim17'               , 'The sum of the daily precipitation values in the driest quarter of the year that preceded the year in which the ants were sampled',
+
+'clim25'               , 'The mean daily insolation of the driest quarter of the year that preceded the year in which the ants were sampled',
+
+'clim18'               , 'The sum of the daily precipitation values in the hottest quarter of the year that preceded the year in which ants were sampled',
+
+'clim11'               , 'The mean daily temperature of the coldest quarter of the year that preceded the year in which the ants were sampled',
+
+'clim19'               , 'The sum of the daily precipitation values in the coldest quarter of the year that preceded the year in which the ants were sampled',
+
+'clim13m'              , 'The precipitation of the wettest month (period of 30 consecutive days) in the year that preceded the year in which the ants were sampled',
+
+'clim14m'              , 'The precipitation of the driest month (period of 30 consecutive days) in the year that preceded the year in which the ants were sampled',
+
+'clim15d'              , 'The ratio of the standard deviation of the daily precipitation estimates and the mean of the daily precipitation values',
+
+'clim04.5yr.mean'      , 'Mean of the clim04 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim06.5yr.mean'      , 'Mean of the clim06 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim07.5yr.mean'      , 'Mean of the clim07 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim08.5yr.mean'      , 'Mean of the clim08 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim09.5yr.mean'      , 'Mean of the clim09 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim14m.5yr.mean'     , 'Mean of the clim14m values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim16.5yr.mean'      , 'Mean of the clim16 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim17.5yr.mean'      , 'Mean of the clim17 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim18.5yr.mean'      , 'Mean of the clim18 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim24.5yr.mean'      , 'Mean of the clim24 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim25.5yr.mean'      , 'Mean of the clim25 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim01.5yr.var'       , 'Variance of the clim01 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim02.5yr.var'       , 'Variance of the clim02 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim03.5yr.var'       , 'Variance of the clim03 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim04.5yr.var'       , 'Variance of the clim04 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim05.5yr.var'       , 'Variance of the clim05 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim06.5yr.var'       , 'Variance of the clim06 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim07.5yr.var'       , 'Variance of the clim07 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim08.5yr.var'       , 'Variance of the clim08 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim09.5yr.var'       , 'Variance of the clim09 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim10.5yr.var'       , 'Variance of the clim10 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim11.5yr.var'       , 'Variance of the clim11 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim12.5yr.var'       , 'Variance of the clim12 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim13m.5yr.var'      , 'Variance of the clim13m values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim14m.5yr.var'      , 'Variance of the clim14m values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim15d.5yr.var'      , 'Variance of the clim15d values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim18.5yr.var'       , 'Variance of the clim18 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim19.5yr.var'       , 'Variance of the clim19 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim20.5yr.var'       , 'Variance of the clim20 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim21m.5yr.var'      , 'Variance of the clim21m values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim22m.5yr.var'      , 'Variance of the clim22m values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim23d.5yr.var'      , 'Variance of the clim23d values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim24.5yr.var'       , 'Variance of the clim24 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim25.5yr.var'       , 'Variance of the clim25 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim26.5yr.var'       , 'Variance of the clim26 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim27.5yr.var'       , 'Variance of the clim27 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim02.5yr.min'       , 'Minimum of the clim02 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim03.5yr.min'       , 'Minimum of the clim03 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim04.5yr.min'       , 'Minimum of the clim04 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim07.5yr.min'       , 'Minimum of the clim07 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim08.5yr.min'       , 'Minimum of the clim08 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim12.5yr.min'       , 'Minimum of the clim12 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim13m.5yr.min'      , 'Minimum of the clim13m values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim15d.5yr.min'      , 'Minimum of the clim15d values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim16.5yr.min'       , 'Minimum of the clim16 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim17.5yr.min'       , 'Minimum of the clim17 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim18.5yr.min'       , 'Minimum of the clim18 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim19.5yr.min'       , 'Minimum of the clim19 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim24.5yr.min'       , 'Minimum of the clim24 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim25.5yr.min'       , 'Minimum of the clim25 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim27.5yr.min'       , 'Minimum of the clim27 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim04.5yr.max'       , 'Maximum of the clim04 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim07.5yr.max'       , 'Maximum of the clim07 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim08.5yr.max'       , 'Maximum of the clim08 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim09.5yr.max'       , 'Maximum of the clim09 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim13m.5yr.max'      , 'Maximum of the clim13m values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim14m.5yr.max'      , 'Maximum of the clim14m values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim15d.5yr.max'      , 'Maximum of the clim15d values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim16.5yr.max'       , 'Maximum of the clim16 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim17.5yr.max'       , 'Maximum of the clim17 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim18.5yr.max'       , 'Maximum of the clim18 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim19.5yr.max'       , 'Maximum of the clim19 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim25.5yr.max'       , 'Maximum of the clim25 values from the 5 year period prior to the year in which the ants were sampled',
+
+'clim04.10yr.mean'     , 'Mean of the clim04 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim07.10yr.mean'     , 'Mean of the clim07 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim08.10yr.mean'     , 'Mean of the clim08 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim14m.10yr.mean'    , 'Mean of the clim14m values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim16.10yr.mean'     , 'Mean of the clim16 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim17.10yr.mean'     , 'Mean of the clim17 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim18.10yr.mean'     , 'Mean of the clim18 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim19.10yr.mean'     , 'Mean of the clim19 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim22m.10yr.mean'    , 'Mean of the clim22m values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim24.10yr.mean'     , 'Mean of the clim24 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim25.10yr.mean'     , 'Mean of the clim25 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim01.10yr.var'      , 'Variance of the clim01 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim02.10yr.var'      , 'Variance of the clim02 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim03.10yr.var'      , 'Variance of the clim03 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim04.10yr.var'      , 'Variance of the clim04 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim05.10yr.var'      , 'Variance of the clim05 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim06.10yr.var'      , 'Variance of the clim06 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim07.10yr.var'      , 'Variance of the clim07 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim08.10yr.var'      , 'Variance of the clim08 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim09.10yr.var'      , 'Variance of the clim09 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim10.10yr.var'      , 'Variance of the clim10 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim11.10yr.var'      , 'Variance of the clim11 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim13m.10yr.var'     , 'Variance of the clim13m values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim14m.10yr.var'     , 'Variance of the clim14m values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim15d.10yr.var'     , 'Variance of the clim15d values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim16.10yr.var'      , 'Variance of the clim16 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim18.10yr.var'      , 'Variance of the clim18 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim19.10yr.var'      , 'Variance of the clim19 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim21m.10yr.var'     , 'Variance of the clim21m values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim22m.10yr.var'     , 'Variance of the clim22m values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim23d.10yr.var'     , 'Variance of the clim23d values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim24.10yr.var'      , 'Variance of the clim24 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim25.10yr.var'      , 'Variance of the clim25 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim26.10yr.var'      , 'Variance of the clim26 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim27.10yr.var'      , 'Variance of the clim27 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim04.10yr.min'      , 'Minimum of the clim04 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim06.10yr.min'      , 'Minimum of the clim06 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim07.10yr.min'      , 'Minimum of the clim07 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim08.10yr.min'      , 'Minimum of the clim08 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim09.10yr.min'      , 'Minimum of the clim09 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim12.10yr.min'      , 'Minimum of the clim12 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim13m.10yr.min'     , 'Minimum of the clim13m values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim14m.10yr.min'     , 'Minimum of the clim14m values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim15d.10yr.min'     , 'Minimum of the clim15d values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim16.10yr.min'      , 'Minimum of the clim16 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim17.10yr.min'      , 'Minimum of the clim17 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim18.10yr.min'      , 'Minimum of the clim18 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim19.10yr.min'      , 'Minimum of the clim19 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim23d.10yr.min'     , 'Minimum of the clim23d values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim24.10yr.min'      , 'Minimum of the clim24 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim25.10yr.min'      , 'Minimum of the clim25 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim27.10yr.min'      , 'Minimum of the clim27 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim03.10yr.max'      , 'Maximum of the clim03 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim04.10yr.max'      , 'Maximum of the clim04 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim09.10yr.max'      , 'Maximum of the clim09 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim13m.10yr.max'     , 'Maximum of the clim13m values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim14m.10yr.max'     , 'Maximum of the clim14m values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim16.10yr.max'      , 'Maximum of the clim16 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim17.10yr.max'      , 'Maximum of the clim17 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim18.10yr.max'      , 'Maximum of the clim18 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim19.10yr.max'      , 'Maximum of the clim19 values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim23d.10yr.max'     , 'Maximum of the clim23d values from the 10 year period prior to the year in which the ants were sampled',
+
+'clim25.10yr.max'      , 'Maximum of the clim25 values from the 10 year period prior to the year in which the ants were sampled') %>%
+  knitr::kable(format = 'markdown', caption = '177 Potential Covariates')
+```
+
+## This concludes the preparation of the climate data.
