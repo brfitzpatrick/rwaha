@@ -1,4 +1,4 @@
-This repository contains code used in the analysis for the manuscript `Predictions of Red Wood Ant Occurrence across Swiss Forests Unimproved by Descriptions of Anthropogenic Habitat Disturbance'.
+This repository contains code used in the analysis for the manuscript **Predictions of Red Wood Ant Occurrence across Swiss Forests Unimproved by Descriptions of Anthropogenic Habitat Disturbance**.
 
 The appendices to this manuscript detail the data preparation and model interpretation.
 
