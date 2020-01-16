@@ -1,5 +1,5 @@
 ---
-title: "S3 Preparation of National Forestry Inventory Interviews Data"
+title: "S3 Preparation of National Forest Inventory Interviews Data"
 author: "Author Blank for Double Blind Peer Review"
 output: html_notebook
 ---

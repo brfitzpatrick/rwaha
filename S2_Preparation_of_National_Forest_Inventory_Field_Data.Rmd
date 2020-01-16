@@ -7,7 +7,7 @@ output:
 ---
 
 ## Introduction
-In this file I prepare the National Forestry Inventory (hereafter NFI) field (and field derived) data for use as explanatory variables in models of Red Wood Ant mound distributions.
+In this file I prepare the National Forest Inventory (hereafter NFI) field (and field derived) data for use as explanatory variables in models of Red Wood Ant mound distributions.
 Sections of this file have been adapted from the data preparation of [Vandegehuchte et al. 2017](https://doi.org/10.1016/j.biocon.2017.06.008).
 
 The data preparation I have performed here is organised as follows.
