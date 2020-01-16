@@ -338,7 +338,7 @@ select(Data.Y.X.ID.tb, Clim.Terr.C62, NFI.S1.C2, Clim.Terr.C69, NFI.S1.C13, Clim
                       draw_cellnote = TRUE, cellnote_size = 14)
 ```
 
-### Were Martijn's elevation and conifer data highly correlated?
+### Were Coauthor's elevation and conifer data highly correlated?
 
 ```{r}
 load('~/rwa/data/Vandegehuchte_et_al_Data/Ants LFI published.Rdata')
@@ -356,7 +356,7 @@ cor(Xfull$dhm25_l2, Xfull$PRCT_CONIF, use = 'pairwise.complete')
 
 So no, these variables were not particularly correlated.
 
-What was strongly correlated with elevation in Martijn's data:
+What was strongly correlated with elevation in Coauthor's data:
 
 ```{r}
 load('~/Downloads/Ants LFI published.Rdata')

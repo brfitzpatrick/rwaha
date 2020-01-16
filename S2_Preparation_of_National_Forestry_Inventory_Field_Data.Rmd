@@ -1,5 +1,5 @@
 ---
-title: "S2 Preparation of National Forestry Inventory Field Data"
+title: "S2 Preparation of National Forest Inventory Field Data"
 author: "Author Blank for Double Blind Peer Review"
 output:
   html_document:
@@ -160,7 +160,7 @@ CLNR.GB.RWAM <- left_join(RPA.raw.plot.tb, RWA.Mound.PA.tb, by = 'CLNR') %>%
 CLNR.GB.RWAM
 ```
 
-Anita was curious to know more about these Gebüschwald plots that contained Red Wood Ant Mounds.
+*Coauthor's name obfuscated* was curious to know more about these Gebüschwald plots that contained Red Wood Ant Mounds.
 In particular she was interested to know which red wood ant species and tree species were present in these plots along with the elevation of these plots.
 
 Reading in the summary statistics for the Digital Elevation Model pixel values within the 12.5m disk buffers that were concentric with the NFI plots.
@@ -235,7 +235,7 @@ gb.rwam.sp.terrain.p
 The 13 Gebüschwald plots that contained Red Wood Ant mounds form ~4.5% of the 290 plots that contained Red Wood Ant mounds from our full set of data.
 There were also 302 Gebüschwald plots in which Red Wood Ant mounds were not detected.
 Thus gebüschwald is not a particularly rare category within these data while it does seem to be a relevant habitat for Red Wood Ants.
-For these reasons Anita and I have elected to retain the Gebüschwald plots in this analysis in order to train models that describe Red Wood Ant occurrence in both forest and scrub forests in Switzerland.
+For these reasons *Coauthor's name obfuscated* and I have elected to retain the Gebüschwald plots in this analysis in order to train models that describe Red Wood Ant occurrence in both forest and scrub forests in Switzerland.
 This decision contrasts with that of Vandegehuchte et al. who restricted their analysis to the data collected from NFI plots classified as `Wald` (Forest).
 Consequently the results of our analysis will not be directly comparable to those of Vandegehuchte et al. since our analysis is both of observations from an additional habitat type and will not be able to include the NFI variables that are not assessed for Gebüschwald plots which Vandegehuchte et al. used in their analysis.
 However, where possible, I will continue to prepare the explanatory variables Vandegehuchte et al. used in their analysis since considerable thought went into the selection of these variables.
@@ -318,7 +318,7 @@ group_by(WFRM.tb, WFRM) %>%
   summarise(N = n())
 ```
 
-Christoph tells me that `WFRM` will not have been assessed at plots which were classed as temporarily unstocked forest (i.e. NUTZKAT == 13, 14, 15) because there are very few (if any) large trees at such plots.
+<Coauthor's name obfuscated> tells me that `WFRM` will not have been assessed at plots which were classed as temporarily unstocked forest (i.e. NUTZKAT == 13, 14, 15) because there are very few (if any) large trees at such plots.
 We discussed this and decided that the forest form was different enough at plots classed as temporarily unstocked forest from each of forest form classes assigned to stocked forest plots that these temporarily unstocked forest plots warranted their own `WFRM` category.
 
 ```{r}
@@ -365,7 +365,7 @@ group_by(WFRM.tb, WFRM) %>%
 Add.Plot.Data.LFI4.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Missing data_03.10.2018.xlsx', sheet = 'Plotdaten_LFI4')
 ```
 
-Christoph has suggest that:
+<Coauthor's name obfuscated> has suggest that:
 
  * when `BESTALT` is present use `BESTALT`
  * when `BESTALT` is missing and `AGEDOM` is present use `AGEDOM`
@@ -486,7 +486,7 @@ left_join(x = SCHLUSSG.tb, y = NUTZKAT.tb, by = 'CLNR') %>%
 ```
 
 Thus 98 of the 100 SCHLUSSSG values that are missing are from plots classified as temporarily unstocked forest.
-Christoph and I have discussed this and decided that the crown closure in the temporarily unstocked forest will be different enough from any of the crown closure categories from stocked forest that temporarily unstocked forest can form its own crown closure category (recall that there will be very few, if any, large trees in temporarily unstocked forest).
+<Coauthor's name obfuscated> and I have discussed this and decided that the crown closure in the temporarily unstocked forest will be different enough from any of the crown closure categories from stocked forest that temporarily unstocked forest can form its own crown closure category (recall that there will be very few, if any, large trees in temporarily unstocked forest).
 
 ```{r}
 SCHLUSSG.tb <- left_join(x = SCHLUSSG.tb, y = NUTZKAT.tb, by = 'CLNR') %>%
@@ -581,7 +581,7 @@ filter(STRUK.tb, NUTZKAT %in% 13:15) %>%
 ```
 
 Thus 98 of the 100 plots that are missing values for STRUK are classified as temporarily unstocked forest.
-Christoph and I have discussed this and decided that the stand structure in temporarily unstocked forest will be different enough from each of the stand structure classes in stocked forest that we can make a new category for stand structure in temporarily unstocked forest and recode the missing values in STRUK as this category at the appropriate plots.
+<Coauthor's name obfuscated> and I have discussed this and decided that the stand structure in temporarily unstocked forest will be different enough from each of the stand structure classes in stocked forest that we can make a new category for stand structure in temporarily unstocked forest and recode the missing values in STRUK as this category at the appropriate plots.
 
 ```{r}
 STRUK.tb <- mutate(STRUK.tb,
@@ -1150,7 +1150,7 @@ filter(BESTOBER.tb, NUTZKAT %in% 13:15) %>%
 ```
 
 Thus 98 of the 100 plots that are missing values for BESTOBER are plots in which the forest has been classified as temporarily unstocked forest.
-I have discussed this with Christoph and we have decided to infill the missing BESTOBER values in the temporarily unstocked forest plots with values of zero.
+I have discussed this with <Coauthor's name obfuscated> and we have decided to infill the missing BESTOBER values in the temporarily unstocked forest plots with values of zero.
 We consider this to be appropriate because temporarily unstocked forest will have almost no trees or very small trees thus either way the average height of the tallest 100 trees per hectare would be very low (because this average would be calculated from a vector of 100 values that included mainly zeros or very small numbers).
 
 ```{r}
@@ -1204,7 +1204,7 @@ c('CLNR', 'WFRM', 'BESTALT.AGEDOM', 'SCHLUSSG', 'STRUK', 'VERJDG', 'STRADG', 'BO
 Import the data:
 ```{r}
 tree.upper.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Baumarten in der Oberschicht_2009-2017_Rohdaten.xlsx', sheet='SQL Results') %>%
-  select(-`...1`)
+  select(-X__1)
 ```
 
 Check whether all plots (CLNR) that were searched for ant mounds are contained in `tree.upper.tb`:
@@ -1439,7 +1439,7 @@ mutate(.data = tree.up.sp.cvr.tb, Upper.Layer.Cover = Upper.Layer.Deciduous.Cove
     summary()
 ```
 
-**Christoph:** '[DGANT] should always sum to 100 % [for each CLNR]. In the 5 [CLNR where it does not] I would multiply all values with the same factor so that the sum gets 100 %.'
+**<Coauthor's name obfuscated>:** '[DGANT] should always sum to 100 % [for each CLNR]. In the 5 [CLNR where it does not] I would multiply all values with the same factor so that the sum gets 100 %.'
 
 This seems reasonable as the relative covers of the different categories were still recorded for these CLNRs (plots).
 
@@ -1453,7 +1453,7 @@ mutate(.data = tree.up.sp.cvr.tb, Upper.Layer.Cover = Upper.Layer.Deciduous.Cove
         t()
 ```
 
-Testing the operations to perform the scaling Christoph suggests:
+Testing the operations to perform the scaling <Coauthor's name obfuscated> suggests:
 ```{r}
 mutate(.data = tree.up.sp.cvr.tb, Upper.Layer.Cover = Upper.Layer.Deciduous.Cover + Upper.Layer.Coniferous.Cover) %>%
   filter(!(Upper.Layer.Cover == 100)) %>%
@@ -1825,7 +1825,7 @@ filter(NUTZKAT.tb, CLNR %in% RPA.raw.plot.tb$CLNR) %>%
 
 Thus 98 of the plots that are missing values for the `Prop.*` variables are plots classed as temporarily unstocked forest.
 
-Christoph has suggested that I use the coverage estimates from the assured regeneration data (`HaBaGesVerj_LFI4.tb`) in place of the coverage estimates from the upper layer when these values are missing in temporarily unstocked forest plots.
+<Coauthor's name obfuscated> has suggested that I use the coverage estimates from the assured regeneration data (`HaBaGesVerj_LFI4.tb`) in place of the coverage estimates from the upper layer when these values are missing in temporarily unstocked forest plots.
 
 Reading in these data:
 
@@ -2039,7 +2039,7 @@ Thus to calculate coverage by species in the upper layer I need to multiply the 
 
 However, we will need to use different variables at the plots classed as temporarily unstocked forest.
 
-For the temporarily unstocked forest Christoph has recommended that I use the coverage of the "gesicherte Verjüngung"- VERJGESDG" multiplied by the proportion - HABARTDGANT of each "Hauptbaumart" - HABART. 
+For the temporarily unstocked forest <Coauthor's name obfuscated> has recommended that I use the coverage of the "gesicherte Verjüngung"- VERJGESDG" multiplied by the proportion - HABARTDGANT of each "Hauptbaumart" - HABART. 
 
 VERJGESDG (and VERJGESDGTXT from Plotdaten_2009-2017_Rohdaten.xlsx) = Deckungsgrad gesicherte Verjungung = Deckungsgrad der gesicherten Verjüngung = MID 273 = Degree of cover of established (assured) regeneration
 
@@ -2049,7 +2049,7 @@ The HABARTDGANT of each HABART (Hauptbaumart) is present in "Hauptbaumarten der 
 
 The species composition in the medium and lower layers has not been recorded by the field team. 
 
-Where there are missing values in the layer coverage values and the plots are not classed as temporarily unstocked forest Christoph recommends infilling with layer coverage of values of 0% and SCHLART values of 1 which codes for schichtig (layered).
+Where there are missing values in the layer coverage values and the plots are not classed as temporarily unstocked forest <Coauthor's name obfuscated> recommends infilling with layer coverage of values of 0% and SCHLART values of 1 which codes for schichtig (layered).
 
 ### SCHIBESTTXT = SCHIBEST Text = Bestandesschicht = MID 285 = Stand layer
 
@@ -2082,8 +2082,8 @@ select_if(layer.cover.all.tb, anyNA) %>%
   vis_miss(cluster = TRUE, sort_miss = TRUE) + theme(axis.text.x = element_text(angle = 90))
 ```
 
-Christoph recommends assuming these missing layers to have coverages of zero except in the case of the upper layer in plots classified as temporarily unstocked forest. 
-For these plots in temporarily unstocked forest that are missing DECKGR values for the upper layer (Oberschicht) Christoph has suggested that I take the VERJGESDG values as the coverage values for the upper layer.
+<Coauthor's name obfuscated> recommends assuming these missing layers to have coverages of zero except in the case of the upper layer in plots classified as temporarily unstocked forest. 
+For these plots in temporarily unstocked forest that are missing DECKGR values for the upper layer (Oberschicht) <Coauthor's name obfuscated> has suggested that I take the VERJGESDG values as the coverage values for the upper layer.
 Before I can do this however I need convert the interval censored data in `VERJGESDGTXT` into numeric  values for the mid points of these intervals.
 
 ```{r}
@@ -2226,7 +2226,7 @@ To calculate the percentage cover by these groups of species in the upper layer 
 
 However, I will need to use different variables at the plots classed as temporarily unstocked forest because DGANT and DECKGR are not assessed at such plots.
 
-For the temporarily unstocked forest Christoph has recommended that I use the coverage of the "gesicherte Verjüngung"- VERJGESDG" multiplied by the proportion - HABARTDGANT of each "Hauptbaumart" - HABART. 
+For the temporarily unstocked forest <Coauthor's name obfuscated> has recommended that I use the coverage of the "gesicherte Verjüngung"- VERJGESDG" multiplied by the proportion - HABARTDGANT of each "Hauptbaumart" - HABART. 
 
 VERJGESDG (and VERJGESDGTXT from Plotdaten_2009-2017_Rohdaten.xlsx) = Deckungsgrad gesicherte Verjungung = Deckungsgrad der gesicherten Verjüngung = MID 273 = Degree of cover of established (assured) regeneration
 
@@ -2240,9 +2240,9 @@ The remaining plots missing coverage data for the upper layer have total upper l
 This is a small approximation but a necessary one.
 
 `Layer.Cover.tb` contains the percentage coverage of the upper layer.
-In the stocked forest plots this data is available as the variable DECKGR and where it was missing from a stocked forest plot I have followed Christoph's advice and infilled the missing upper layer coverage with a value of zero.
+In the stocked forest plots this data is available as the variable DECKGR and where it was missing from a stocked forest plot I have followed <Coauthor's name obfuscated>'s advice and infilled the missing upper layer coverage with a value of zero.
 In the temporarily unstocked forest plots DECKGR was not recorded.
-For these plots I have followed Christoph's advice and infilled the upper layer cover values with the mid point of the interval censored VERJGESDG values.
+For these plots I have followed <Coauthor's name obfuscated>'s advice and infilled the upper layer cover values with the mid point of the interval censored VERJGESDG values.
 In temporarily unstocked forest plots where the degree of cover of assured regeneration (VERJGESDG) values were also missing and the total cover of regeneration (both assured and unassured) was less than 1% the missing upper layer coverage values have been recoded as zeros.
 Again this is a small but necessary approximation.
 
@@ -2408,7 +2408,7 @@ filter_at(.tbl = SCHLART.tb, .vars = vars(matches('^SCHLART.Oberschicht.3$|^SCHL
     knitr::kable()
 ```
 
-I have asked Christoph about these stocked plots with missing values for `SCHLART` and he has suggested that I recode these remaining missing values as schichtig (layered)
+I have asked <Coauthor's name obfuscated> about these stocked plots with missing values for `SCHLART` and he has suggested that I recode these remaining missing values as schichtig (layered)
 
 
 
@@ -2549,7 +2549,7 @@ and as such contains no additional information and can be excluded from our set 
 
 ### VORHERBA = vorherrschende Hauptbaumart nach Basalfläche = predominant main tree species according to basal area
 
-Christoph has recommended that I substitute the highest HABARTDGANT for a CLNR in place of the VORHERBA value in the cases where the VORHERBA value is missing but that HABARTDGANT is present.
+<Coauthor's name obfuscated> has recommended that I substitute the highest HABARTDGANT for a CLNR in place of the VORHERBA value in the cases where the VORHERBA value is missing but that HABARTDGANT is present.
 
 We start by identifying which `HABART` value(s) had the maximum `HABARTDGANT` values at each `CLNR`.
 
@@ -3010,7 +3010,7 @@ group_by(WUTEAKT.tb, WUTEAKT) %>%
 ```
 
 ### Tree Variables:
-Christoph explained that the variables:
+<Coauthor's name obfuscated> explained that the variables:
 
 `GESTZ_*`, `STZ_*`, `TOSTZ_*`, `GESV_*`, `V_*`, `TOV_*`, `BAS_*`
 
@@ -3387,7 +3387,7 @@ filter(raw.plot.tb, AMHAUSST == 1) %>%
 ```
 
 `DDOM` is missing from 429 plots that were searched for ant mounds.
-I have discussed these missing values with Christoph and `DDOM` will be missing for plots which lacked sample trees i.e. live, standing trees with a D13 (diameter at breast height) of 12 cm or greater.
+I have discussed these missing values with <Coauthor's name obfuscated> and `DDOM` will be missing for plots which lacked sample trees i.e. live, standing trees with a D13 (diameter at breast height) of 12 cm or greater.
 Thus for our purposes we can replace these missing `DDOM` values with values of zero since random forests are based on decision trees which use binary partitions of the data defined by threshold values in explanatory variables.
 Consequently, replacing values that are missing but known to be very small with zeros is far less of an issue in data preparation for random forests than it would be in data preparation for multiple linear regressions.
 
@@ -3753,7 +3753,7 @@ SPTRAM.tb %>%
 ```
 Entirely missing data
 
-Christoph: "[Trampelspuren] was only assessed in NFI3 on accessible Plots. It was very,very, very rare and for sure not of relevance. Therefor in NFI4 is always the value -1 "Wert nicht ermittelt"."
+<Coauthor's name obfuscated>: "[Trampelspuren] was only assessed in NFI3 on accessible Plots. It was very,very, very rare and for sure not of relevance. Therefor in NFI4 is always the value -1 "Wert nicht ermittelt"."
 
 **MID 544 Vehicle tracks = Fahrzeugspuren = Fahrzeugspur = SPFRZ**
 ```{r}
@@ -4092,7 +4092,7 @@ select(NFI.Plot.Data, matches('^STZ\\_|^TOSTZ\\_|^V\\_|^TOV\\_|^BAS\\_')) %>%
     vis_miss(x = ., sort_miss = TRUE, cluster = TRUE, warn_large_data = FALSE) + theme(axis.text.x = element_text(angle = 90, hjust = 0, vjust = 0.5))
 ```
 
-I've asked Christoph about this and he says that these plots probably lacked sample trees because 'because of a very young stand and no trees above 11 cm dbh or very open stands with no trees inside the 500-m2-circle. Therefore we don't have information about STZ, TOSTZ, V, TOV ...'
+I've asked <Coauthor's name obfuscated> about this and he says that these plots probably lacked sample trees because 'because of a very young stand and no trees above 11 cm dbh or very open stands with no trees inside the 500-m2-circle. Therefore we don't have information about STZ, TOSTZ, V, TOV ...'
 We discussed this and decided that it makes sense to replaces these missing values with zero.
 Recall that a random forest is a collection of many decision trees and that decision trees use binary partitions of the data based on threshold values of explanatory variables.
 Consequently, replacing explanatory variable values that are missing but known to be very small with zeros is less of an issue in data preparation for a random forest than it would be in data preparation for a multiple linear regression.

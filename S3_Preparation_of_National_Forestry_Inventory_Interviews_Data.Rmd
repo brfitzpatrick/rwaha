@@ -32,46 +32,46 @@ I also read in some of the field data which I use in this data preparation for c
 ```{r}
 raw.int.tb <- read_excel(path = '../rwa/data/NFI/Daten/Umfragedaten 2009-2017_Rohdaten.xlsx', sheet = 'SQL Results') %>%
   right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
-    select(-AMHAUSST, -`...1`)
+    select(-AMHAUSST, -X__1)
 ```
 
 ```{r}
 der.int.tb <- read_excel(path = '../rwa/data/NFI/Daten/Plotdaten_2009-2017_abgeleitete Daten_Nachtrag.xls', sheet = 'SQL Results') %>%
   right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
-    select(-AMHAUSST, -`...1`)
+    select(-AMHAUSST, -X__1)
 ```
 
 ```{r}
 plotdaten.tb <- read_excel(path = '../rwa/data/NFI/Daten/Plotdaten und Baumdaten_2009-2017_abgeleitete Daten (Version 31.05.2018).xlsx', sheet = 'Plotdaten') %>%
   right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
-    select(-AMHAUSST, -`...1`)
+    select(-AMHAUSST, -X__1)
 ```
 
 ```{r}
 EINGARTUMF.tb <- read_excel(path = '../rwa/data/NFI/Datenlieferung_Ben_21.08.2018/Waldbauliche_Eingriffe_1996_2017.xlsx') %>%
   right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
-    select(-AMHAUSST, -`...1`)
+    select(-AMHAUSST, -X__1)
 ```
 
 ```{r}
 FLSCHUMF.tb <- read_excel(path = '../rwa/data/NFI/Datenlieferung_Ben_21.08.2018/Plotdaten_2009-2017_abgeleitete Daten_Nachtrag_10.09.2018.xlsx') %>%
   right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
-    select(-AMHAUSST, -`...1`)
+    select(-AMHAUSST, -X__1)
 ```
 
 ```{r}
 baumdaten.tb <- read_excel(path = '../rwa/data/NFI/Daten/Plotdaten und Baumdaten_2009-2017_abgeleitete Daten (Version 31.05.2018).xlsx', sheet = 'Baumdaten') %>%
   right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
-    select(-AMHAUSST, -`...1`)
+    select(-AMHAUSST, -X__1)
 
 raw.plot.tb <- read_excel(path = '../rwa/data/NFI/Daten/Plotdaten_2009-2017_Rohdaten.xlsx', sheet = 'SQL Results') %>%
- select(-`...1`)
+ select(-X__1)
 
 RPA.raw.plot.tb <- filter(raw.plot.tb, AMHAUSST ==  1)
 
 derived.plot.tb <- read_excel(path = '../rwa/data/NFI/Daten/Plotdaten und Baumdaten_2009-2017_abgeleitete Daten (Version 31.05.2018).xlsx', sheet = 'Plotdaten') %>%
   right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
-    select(-AMHAUSST, -`...1`)
+    select(-AMHAUSST, -X__1)
 
 WRPA.derived.plot.tb <- select(RPA.raw.plot.tb, CLNR) %>%
   left_join(., derived.plot.tb, by = 'CLNR')
@@ -81,24 +81,24 @@ Reading in some Additional Data:
 ```{r}
 Add.Plot.Data.LFI4.tb <- read_excel(path = '../rwa/data/NFI/Daten/Missing data_03.10.2018.xlsx', sheet = 'Plotdaten_LFI4') %>%
   right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
-    select(-AMHAUSST, -`...1`)
+    select(-AMHAUSST, -X__1)
 
 Add.Plot.Data.LFI3.tb <- read_excel(path = '../rwa/data/NFI/Daten/Missing data_03.10.2018.xlsx', sheet = 'Plotdaten_LFI3') %>%
   right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
-    select(-AMHAUSST, -`...1`)
+    select(-AMHAUSST, -X__1)
 
 HaBaGesVerj_LFI4.tb <- read_excel(path = '../rwa/data/NFI/Daten/Missing data_03.10.2018.xlsx', sheet = 'HaBaGesVerj_LFI4') %>%
   right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
-    select(-AMHAUSST, -`...1`)
+    select(-AMHAUSST, -X__1)
 
 Schichtdeckungsgrade.tb <- read_excel(path = '../rwa/data/NFI/Daten/Missing data_03.10.2018.xlsx', sheet = 'Schichtdeckungsgrade') %>%
   right_join(y = CLNR.SFAM.tb, by = 'CLNR') %>%
-    select(-AMHAUSST, -`...1`)
+    select(-AMHAUSST, -X__1)
 ```
 
 ## Extraction and Preparation of Selected Variables
 
-Anita and I read through the NFI Field Manual and selected a set of variables from the NFI Interviews Data that we think have the potential to be relevant to the distributions of ant mounds.
+*Coauthor's name obfuscated* and I read through the NFI Field Manual and selected a set of variables from the NFI Interviews Data that we think have the potential to be relevant to the distributions of ant mounds.
 I extract and prepare each of these variables in turn below.
 
 ### MID 326 = ERSKONZ = Access Concept
@@ -255,7 +255,7 @@ tribble(~Code, ~Meaning,
   knitr::kable()
 ```
 
-| Excel Sheet Column Name  | NAFIDAS Entry                                    | DeepL Translation of NAFIDAS Entry                             | MID 329 Description (Christoph has Checked)                                                | MID 329 Code (Christoph has Checked) |
+| Excel Sheet Column Name  | NAFIDAS Entry                                    | DeepL Translation of NAFIDAS Entry                             | MID 329 Description (Coauthor has Checked)                                                | MID 329 Code (Coauthor has Checked) |
 |--------------|--------------------------------------------------|----------------------------------------------------------------|-----------------------------------------------------------------------------|----------------------|
 | ERHASPAZ     | Erholungsart Spazieren                           | Relaxation Walking                                             |  Walking.                                                                   |  1                   |
 | ERHAWANDER   | Erholungsart Wandern                             | Hiking as a form of recreation                                 |  Hiking (including transport facilities).                                   |  2                   |
@@ -693,7 +693,7 @@ group_by(raw.int.tb, WALDENTUMF) %>%
     knitr::kable()
 ```
 
-I have discussed this with Anita and we have decided to combine the 26 plots with `Unknown` forest origin with the 5502 plots with the `Always forest` forest origin.
+I have discussed this with *Coauthor's name obfuscated* and we have decided to combine the 26 plots with `Unknown` forest origin with the 5502 plots with the `Always forest` forest origin.
 Our reasoning here is that both these categories describe plots that have been forested for a long time that do not show obvious signs of any of the three sorts of reforestation.
 For the purposes of describing ant habitat we consider these categories as similar enough to combine.
 
@@ -955,7 +955,7 @@ mutate(raw.int.tb, ERNTART.cat = case_when(ERNTART == 1  ~ 'Axe',
         knitr::kable(col.names = c('ERNTART', 'ERNTART.cat', 'Number'))
 ```
 
-I asked Christoph how we could combine some of these harvesting methods into new categories based on similar levels of habitat disturbance associated with each of these harvesting methods and he suggested the the following four groups of categories.
+I asked *Coauthor's name obfuscated* how we could combine some of these harvesting methods into new categories based on similar levels of habitat disturbance associated with each of these harvesting methods and he suggested the the following four groups of categories.
 I have given each group of categories a name below.
 
 | ERNTART | Category Name              |
@@ -1058,7 +1058,7 @@ FLSCHUMF2  = Type of Second Areal Damage
 Plots (CLNR's) without records in these columns have had no areal damage since NFI2.
 
 Furthermore, if the field team did not recognize any areal damage (>= 10% of the interpretation area) the associated FLSCHJAHR will be recorded as missing. 
-Christoph recommends that I only use FLSCHUMF1 where there is a corresponding FLSCHJAHR1 value and that I recode the remainder as `no damage` (code 15).
+*Coauthor's name obfuscated* recommends that I only use FLSCHUMF1 where there is a corresponding FLSCHJAHR1 value and that I recode the remainder as `no damage` (code 15).
 As it turns out, this has already been done in the most recent installment of the data:
 
 ```{r}
@@ -1132,7 +1132,7 @@ group_by(FLSC.HUMF.JAHR.1.tb, FLSCHUMF1.txt.rc) %>%
       knitr::kable()
 ```
 
-I have discussed aggregations of these categories with Anita and Christoph and we have agreed on the following aggregations.
+I have discussed aggregations of these categories with *Coauthor's name obfuscated* and *Coauthor's name obfuscated* and we have agreed on the following aggregations.
 
 |FLSCHUMF1.txt.rc                                              | Number of Observations | Aggregation    |
 |:-------------------------------------------------------------|-----------------------:|---------------:|
@@ -1366,7 +1366,7 @@ The NFI database contains:
  * DATUMF = the date in which the field survey was conducted at a plot
 
 
-At Christoph's suggestion, below I compare LETZTENU to my attempt to calculate an equivalent from WABAEJAHR and DATUMF.
+At *Coauthor's name obfuscated*'s suggestion, below I compare LETZTENU to my attempt to calculate an equivalent from WABAEJAHR and DATUMF.
 
 Reading in the Data that contains the date of the field survey:
 
@@ -1480,7 +1480,7 @@ p1 <- select(test.tb, CLNR, LETZTENU, years.since.last.treatment) %>%
 ggplotly(p1)  
 ```
 
-Christoph and I discussed this discrepancy and Christoph has recommended the following approach to calculating the years since the most recent silvicultural treatment (intervention).
+*Coauthor's name obfuscated* and I discussed this discrepancy and *Coauthor's name obfuscated* has recommended the following approach to calculating the years since the most recent silvicultural treatment (intervention).
 
 For all plots (CLNR values) that have a most recent intervention prior to 1996 I will take the value of LETZTENU as the number of years between the most recent intervention and the year of the field survey.
 
@@ -1488,7 +1488,7 @@ For all plots (CLNR values) that have a most recent intervention after 1996 I wi
 
 Recall that if a CLNR is not present in EINGARTUMF.tb then it has not had an intervention since 1996:
 
-Christoph writes that: 'when it concerns to the years of the LFI4 (2009-2017), the silvicultural intervention in the corresponding year always took place before the field was surveyed. If you are also interested in the interventions before 2009, I would have to think about how it could be derived.'
+*Coauthor's name obfuscated* writes that: 'when it concerns to the years of the LFI4 (2009-2017), the silvicultural intervention in the corresponding year always took place before the field was surveyed. If you are also interested in the interventions before 2009, I would have to think about how it could be derived.'
 Thus when the field survey was conducted in the same years as a silvicultural intervention it is safe to calculate the years since the last silvicultural intervention by subtracting the year of the silvicultural intervention from the year of the field survey.
 My concern was that if at some plots the intervention had occurred after the field survey but still within the same year then the years since the last silvicultural intervention would actually be the number of years from the date of the field survey to the most recent intervention that had been conducted prior to the field survey rather than zero.
 
