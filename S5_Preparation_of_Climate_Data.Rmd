@@ -1938,7 +1938,7 @@ save(list = 'climate.summaries.tb', file = '~/rwa/data/processed_climate/climate
 pryr::object_size(climate.summaries.tb)
 ```
 
-# Update this table to include all explantory variables
+# Examples of Expansions of the Acronyms Representing Explanatory Variable Names
 
 ```{r, eval = TRUE, echo = FALSE}
 tribble(
