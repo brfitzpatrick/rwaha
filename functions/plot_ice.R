@@ -1,4 +1,4 @@
-#' A function to produce Individual Conditional Expectation (ICE) plots
+' A function to produce Individual Conditional Expectation (ICE) plots
 #'
 #' Longer description goes here...
 #' 
@@ -167,12 +167,15 @@ plot_ice <- function(ice.obj = ice.elev,
                 guides(alpha = FALSE) + 
                 labs(x = x.axis.title, y = y.axis.title)
   }  
-  if( (class(facet.rows.by) == 'character') & !(class(facet.cols.by) == 'character')){  
+  if( (class(facet.rows.by) == 'character') & !(class(facet.cols.by) == 'character')){
+    names(facet.rows.threshold) <- NULL
     plot <- plot +
-      facet_grid(rows = vars((!!facet.rows.by.sym) > (!!facet.rows.threshold)),
+      facet_grid(rows = vars(((!!facet.rows.by.sym) > (!!facet.rows.threshold)) %>% 
+                               if_else(true = glue(facet.rows.by.sym, ' > ', facet.rows.threshold),
+                                               false = glue(facet.rows.by.sym, ' <= ', facet.rows.threshold))),
                  cols = NULL,
                  scales = 'fixed',
-                 labeller = labeller(.rows = label_both, .cols = NULL)
+                 labeller = labeller(.rows = label_parsed, .cols = NULL)                 
       )
     if(plot.pd.curve){
       pd.row.1.tb <- tibble(gridpts = ice.obj$gridpts,
@@ -196,13 +199,16 @@ plot_ice <- function(ice.obj = ice.elev,
         geom_line(data = pd.row.2.tb, colour = pdc.thin.line.col, size = pdc.thin.line.width, alpha = pdc.thin.line.alpha)
     }    
   }
-  if( !(class(facet.rows.by) == 'character') & (class(facet.cols.by) == 'character')){  
+  if( !(class(facet.rows.by) == 'character') & (class(facet.cols.by) == 'character')){
+    names(facet.cols.threshold) <- NULL
     plot <- plot +
-              facet_grid(cols = vars((!!facet.cols.by.sym) > (!!facet.cols.threshold)),
+              facet_grid(cols = vars(((!!facet.cols.by.sym) > (!!facet.cols.threshold)) %>%
+                                       if_else(true = glue(facet.cols.by.sym, ' > ', facet.cols.threshold),
+                                               false = glue(facet.cols.by.sym, ' <= ', facet.cols.threshold))),
                          rows = NULL,
                          scales = 'fixed',
-                         labeller = labeller(.cols = label_both, .rows = NULL)
-              )    
+                         labeller = labeller(.cols = label_parsed, .rows = NULL)
+              )
     if(plot.pd.curve){
       pd.row.1.tb <- tibble(gridpts = ice.obj$gridpts,
                             yhat = ice.obj$pdp - pd.vertical.offset,
@@ -224,15 +230,60 @@ plot_ice <- function(ice.obj = ice.elev,
         geom_line(data = pd.row.2.tb, colour = pdc.thick.line.col, size = pdc.thick.line.width, alpha = pdc.thick.line.alpha) +
         geom_line(data = pd.row.2.tb, colour = pdc.thin.line.col, size = pdc.thin.line.width, alpha = pdc.thin.line.alpha)
     }
-  }  
+  }
+
+  
   if( (class(facet.rows.by) == 'character') & (class(facet.cols.by) == 'character') ){
-    if( !(facet.rows.by == facet.cols.by) ){  
-      plot <- plot +
-                facet_grid(rows = vars((!!facet.rows.by.sym) > (!!facet.rows.threshold)),
-                           cols = vars((!!facet.cols.by.sym) > (!!facet.cols.threshold)),
-                           scales = 'fixed',
-                           labeller = labeller(.cols = label_both, .rows = label_both)
-                )
+    if( !(facet.rows.by == facet.cols.by) ){
+      names(facet.rows.threshold) <- NULL
+      names(facet.cols.threshold) <- NULL
+      if(class(colour.by) == 'character'){
+        colour.by.sym <- sym(colour.by)
+        if(plot.order.low.to.high){
+          Curve.ro <- group_by(ice.tb, Curve) %>%
+            summarise(u.colour.by = unique((!!colour.by.sym))) %>%
+              arrange(u.colour.by) %>%
+                mutate(plot.order = 1:nrow(.))
+        } else{
+          Curve.ro <- group_by(ice.tb, Curve) %>%
+            summarise(u.colour.by = unique((!!colour.by.sym))) %>%
+              arrange(desc(u.colour.by)) %>%
+                mutate(plot.order = 1:nrow(.))
+          }    
+        plot <- left_join(x = ice.tb, y = Curve.ro, by = 'Curve') %>%
+                  arrange(plot.order) %>%
+                    mutate(fcol = ((!!facet.cols.by.sym) > facet.cols.threshold) %>%
+                                    if_else(true = glue(facet.cols.by.sym, ' > ', facet.cols.threshold),
+                                            false = glue(facet.cols.by.sym, ' <= ', facet.cols.threshold)),
+                           frow = ((!!facet.rows.by.sym) > facet.rows.threshold) %>%
+                                    if_else(true = glue(facet.rows.by.sym, ' > ', facet.rows.threshold),
+                                            false = glue(facet.rows.by.sym, ' <= ', facet.rows.threshold))) %>%
+                      ggplot(aes(x = gridpts, y = yhat, group = Curve, colour = (!!colour.by.sym), alpha = curve.alpha)) +
+                        geom_line() +
+                        scale_colour_viridis_c() + 
+                        theme_bw() +
+                        scale_alpha_continuous(range = alpha.scale.range) +
+                        guides(alpha = FALSE) + 
+                        labs(x = x.axis.title, y = y.axis.title)
+      } else{
+          plot <- mutate(ice.tb,
+                         fcol = ((!!facet.cols.by.sym) > facet.cols.threshold) %>%
+                                    if_else(true = glue(facet.cols.by.sym, ' > ', facet.cols.threshold),
+                                            false = glue(facet.cols.by.sym, ' <= ', facet.cols.threshold)),
+                         frow = ((!!facet.rows.by.sym) > facet.rows.threshold) %>%
+                                    if_else(true = glue(facet.rows.by.sym, ' > ', facet.rows.threshold),
+                                            false = glue(facet.rows.by.sym, ' <= ', facet.rows.threshold))) %>%
+                    ggplot(aes(x = gridpts, y = yhat, group = Curve, alpha = curve.alpha)) +
+                      geom_line() +
+                      theme_bw() +
+                      scale_alpha_continuous(range = alpha.scale.range) +
+                      guides(alpha = FALSE) + 
+                      labs(x = x.axis.title, y = y.axis.title) +
+                      facet_grid(frow ~ fcol,
+                                 scales = 'fixed',
+                                 labeller = labeller(.cols = label_parsed, .rows = label_parsed)
+                      )           
+      }
       if(plot.pd.curve){
         pd.row.1.tb <- tibble(gridpts = ice.obj$gridpts,
                               yhat = ice.obj$pdp - pd.vertical.offset,
