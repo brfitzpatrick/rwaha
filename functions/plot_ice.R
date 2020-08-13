@@ -58,10 +58,9 @@ plot_ice <- function(ice.obj = ice.elev,
       }
   }
   predictor.sym <- sym(ice.obj$predictor)
-  ice.curves.mat.rnc <- ice.obj$ice_curves # rnc = renamed columns
+  ice.curves.mat.rnc <- ice.obj$ice_curves
   colnames(ice.curves.mat.rnc) <- paste0('CP', 1:ncol(ice.curves.mat.rnc))
   ic.key.tb <- tibble(New.CN = colnames(ice.curves.mat.rnc), Old.CN = colnames(ice.obj$ice_curves), gridpts = ice.obj$gridpts)
-  # summary(as.numeric(ic.key.tb$Old.CN) - ic.key.tb$gridpts) # i.e. these are basically identical
   ice.tb <- cbind(ice.obj$Xice, ice.curves.mat.rnc) %>%
     as_tibble() %>%
       mutate(Curve = 1:nrow(.)) %>%
@@ -230,9 +229,7 @@ plot_ice <- function(ice.obj = ice.elev,
         geom_line(data = pd.row.2.tb, colour = pdc.thick.line.col, size = pdc.thick.line.width, alpha = pdc.thick.line.alpha) +
         geom_line(data = pd.row.2.tb, colour = pdc.thin.line.col, size = pdc.thin.line.width, alpha = pdc.thin.line.alpha)
     }
-  }
-
-  
+  }  
   if( (class(facet.rows.by) == 'character') & (class(facet.cols.by) == 'character') ){
     if( !(facet.rows.by == facet.cols.by) ){
       names(facet.rows.threshold) <- NULL
@@ -264,7 +261,12 @@ plot_ice <- function(ice.obj = ice.elev,
                         theme_bw() +
                         scale_alpha_continuous(range = alpha.scale.range) +
                         guides(alpha = FALSE) + 
-                        labs(x = x.axis.title, y = y.axis.title)
+                        labs(x = x.axis.title, y = y.axis.title) +
+                        facet_grid(frow ~ fcol,
+                                   scales = 'fixed',
+                                   labeller = labeller(.cols = label_parsed, .rows = label_parsed)
+                        )           
+        
       } else{
           plot <- mutate(ice.tb,
                          fcol = ((!!facet.cols.by.sym) > facet.cols.threshold) %>%
