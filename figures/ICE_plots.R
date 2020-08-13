@@ -5,6 +5,7 @@ library('tidyverse')
 library('gridExtra')
 library('grid')
 library('cowplot')
+library('glue')
 
 # load the input data
 
@@ -12,7 +13,7 @@ load('~/rwa/party_data/party_tune/cv_initial_workspace/party_cv_input.RData')
 
 # source the plot_ice() funtion
 
-source('~/rwa/interpretation/ICE_plots/plot_ice.R')
+source('~/rwaha/functions/plot_ice.R')
 
 # ICE plots of the 6 explanatory variable with the highest conditional variable importance scores:
   # 1) Clim.Terr.C62
@@ -177,7 +178,7 @@ load('~/rwa/party_data/party_tune/cv_initial_workspace/party_cv_input.RData')
 
 # source the plot_ice() funtion
 
-source('~/rwa/interpretation/ICE_plots/plot_ice.R')
+source('~/rwaha/functions/plot_ice.R')
 
 load('~/rwa/party_data/ice/objects/ice_obj/ct_c64/ice.ct.c64.200p.RData')
 
@@ -207,7 +208,8 @@ ice.ct.c25.int.ct.c62.p <- plot_ice(ice.obj = ice.ct.c25.200p,
                                     center.curves = TRUE,
                                     centered.quantile = 0.01,
                                     plot.pd.curve = FALSE,
-                                    y.axis.title = NULL  
+                                    y.axis.title = NULL,
+                                    facet.threshold.rounding.digits = 2                                    
 ) + ylab(NULL)
 
 
