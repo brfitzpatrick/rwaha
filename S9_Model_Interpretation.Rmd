@@ -180,7 +180,7 @@ load('~/rwa/party_data/party_tune/cv_initial_workspace/party_cv_input.RData')
 See Appendix for the source code for this function.
 
 ```{r}
-source('./functions/plot_ice.R')
+source('../rwaha/functions/plot_ice.R')
 ```
 
 ### ICE plots of the 6 explanatory variable with the highest conditional variable importance scores:
@@ -445,12 +445,12 @@ plot.mean.elevation.tb <- select(dem.bs.tb, CLNR, dem_5m_clip_master_mean_12m)
 ```
 
 Load the Prepared Red Wood Ant Species Occurrence Data
-```{r, fig.width = 12, fig.height = 12}
+```{r}
 load('~/rwa/data/ants/Preparations_of_Ameisen_Data_2009-2017_pourWSL_22.03.2018_xlsx/wood.ant.species.presence.absence.tb.RData')
 ```
 
 Plot the distribution of elevations at which each species was observed:
-```{r}
+```{r, fig.width = 12, fig.height = 12}
 rwa.sp.elev.tb <- gather(wood.ant.species.presence.absence.tb, -CLNR, -Year, key = 'Species', value = 'Presence') %>%
   filter(Presence == 1) %>%
     left_join(y = plot.mean.elevation.tb, by = 'CLNR') %>%
@@ -545,7 +545,7 @@ mutate(All.Cor.with.NFI.S1.C13, Variable.ro = fct_relevel(Variable, Variable)) %
 
 # Appendix
 
-```{r code = readLines('~/rwap/functions/plot_ice.R'), echo = TRUE, eval = FALSE}
+```{r code = readLines('../rwaha/functions/plot_ice.R'), echo = TRUE, eval = FALSE}
 ```
 
 
