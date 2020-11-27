@@ -1,6 +1,6 @@
 ---
 title: "S1 Preparation of Ant Data"
-author: "Author Blank for Double Blind Peer Review"
+author: "Benjamin R Fitzpatrick"
 output:
   html_document:
     df_print: paged
@@ -70,7 +70,7 @@ My understanding of the meanings of the column names is summarised in the table 
 | DATUM                | Date                                                         |                                                |
 | BAUMART              | Tree species	                                              | only for ants from trees                       |
 | BHD                  | Tree diameter at breast height of the tree                   | only for trees from which ants were collected  |
-| UMFANG               | Size of tree from which Ants were collected???               | Coauthor's best guess                           |
+| UMFANG               | Size of tree from which Ants were collected???               | MLV's best guess                           |
 | AMEISENPROBENRBAUM   | Identification number of tree from which ants were collected | only for ants from trees                       |
 | AMEISENHAUFENPROBENR | Ant mound number                                             |                                                |
 | FdB                  | wood ant                                                     | acronym for fourmis des bois?                  |
@@ -656,9 +656,9 @@ nrow(RWA.Plot.Presences) == length(unique(pull(RWA.Plot.Presences,CLNR)))
 ```
 thus none of these 290 plots were revisited in subsequent years & found to have RWA mounds during the period spanned by the data (2009-2017)
 
-#### checking my filtering against *Coauthor's name obfuscated*'s filtering:
+#### checking my filtering against MLV's filtering:
 
-*Coauthor's name obfuscated* reported 203 NFI plots with Red Wood Ant mounds from 2009-2014
+MLV reported 203 NFI plots with Red Wood Ant mounds from 2009-2014
 
 If I subset to these years I get the same number of plots with one or more RWA mounds present
 
@@ -1124,7 +1124,7 @@ This class imbalance is severe enough that it will need to be addressed in the a
 
 For our analysis we can only use the plots with confirmed presences or absences of Red Wood Ants mounds.
 We must also decide whether we wish to model plots from both `Wald` and `Gebüschwald` or whether we wish to restrict our analysis to the observations of the `Wald` plots.
-*Coauthor's name obfuscated* choose to restrict his analysis to the `Wald` plots writing: 
+MLV choose to restrict his analysis to the `Wald` plots writing: 
 
 "I am inclined to drop WNWENT, and thus effectively limit the analysis to "forest" according to LFI definition, and exclude "shrub forest", because it is interesting to see how the structural diversity and biotope values developed by LFI perform in predicting ants (it is effectively a test of the quality of these indices)."
 
