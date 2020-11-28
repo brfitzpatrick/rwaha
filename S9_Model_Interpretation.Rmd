@@ -1,6 +1,6 @@
 ---
 title: "S9 Model Interpretation"
-author: "Author Blank for Double Blind Peer Review"
+author: "Benjamin R Fitzpatrick"
 output:
   html_document:
     df_print: paged
@@ -338,7 +338,7 @@ select(Data.Y.X.ID.tb, Clim.Terr.C62, NFI.S1.C2, Clim.Terr.C69, NFI.S1.C13, Clim
                       draw_cellnote = TRUE, cellnote_size = 14)
 ```
 
-### Were Coauthor's elevation and conifer data highly correlated?
+### Were MLV's elevation and conifer data highly correlated?
 
 ```{r}
 load('~/rwa/data/Vandegehuchte_et_al_Data/Ants LFI published.Rdata')
@@ -356,7 +356,7 @@ cor(Xfull$dhm25_l2, Xfull$PRCT_CONIF, use = 'pairwise.complete')
 
 So no, these variables were not particularly correlated.
 
-What was strongly correlated with elevation in Coauthor's data:
+What was strongly correlated with elevation in MLV's data:
 
 ```{r}
 load('~/Downloads/Ants LFI published.Rdata')

@@ -1,6 +1,6 @@
 ---
 title: "S4 Preparation of Digital Elevation Model Derived Data"
-author: "Author Blank for Double Blind Peer Review"
+author: "Benjamin R Fitzpatrick"
 output: html_notebook
 ---
 
@@ -8,7 +8,7 @@ output: html_notebook
 
 In this file I prepare summary statistics for Digital Elevation Model (DEM) products.
 The DEM used to calculate these products has a 5m resolution having been resampled with ArcGIS 10.5 from the SwissAlti3D 2m resolution DEM ([Swisstopo: Höhenmodelle](https://shop.swisstopo.admin.ch/en/products/height_models/alti3D)).
-These summary statistics were calculated by *Coauthor's name obfuscated* for the values of the pixels of these DEM products that intersected a 12.5m radius disk buffer centered on the coordinates of the centroid of each of the NFI Plots.
+These summary statistics were calculated by AB for the values of the pixels of these DEM products that intersected a 12.5m radius disk buffer centered on the coordinates of the centroid of each of the NFI Plots.
 
 The column names in our data files that contain the DEM products are explained in the table below.
 
@@ -75,7 +75,7 @@ Consequently, I first read in the majority of the DEM product summaries from one
 Some of the plots that were searched for ant mounds were absent from the files of summary statistics of the global potential radiation pixel values in particular buffer sizes.
 These missing values have been provided as additional files which I read in and join on where appropriate.
 
-When he provided these data, *Coauthor's name obfuscated* also alerted me to the fact that some CLNR have missing values for some of the Moran's I statistics.
+When he provided these data, AB also alerted me to the fact that some CLNR have missing values for some of the Moran's I statistics.
 These missing values arrise when there is no variation among the pixel values of a particular DEM product within a buffer.
 To calculate Moran's I for the pixel values in a buffer there needs to be some variance among these pixel values.
 While we cannot calculate a Moran's I value in these situations, all of the pixels having identical values is closer to the situation of perfect spatial dependence than the situation of perfect spatial independece (e.g. if we had a chess board patten among the pixels) so we have decided to recode these missing values to have values of `1`.

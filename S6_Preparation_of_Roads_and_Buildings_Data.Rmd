@@ -1,6 +1,6 @@
 ---
 title: "S6 Preparation of Roads and Buildings Data"
-author: "Author Blank for Double Blind Peer Review"
+author: "Benjamin R Fitzpatrick"
 output:
   html_document:
     df_print: paged
@@ -8,7 +8,7 @@ output:
 
 ## Introduction
 
-In this file I prepare the data *coauthor's name obfuscated* calculated with ArcMap that quantify for each plot the distance from the plot centre to each of the nearest small road, big road and building.
+In this file I prepare the data MF calculated with ArcMap that quantify for each plot the distance from the plot centre to each of the nearest small road, big road and building.
 Below I prepare these data for use as explanatory variable in our models for ant occurence.
 
 Input Data :

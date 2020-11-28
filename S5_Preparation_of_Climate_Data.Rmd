@@ -1,6 +1,6 @@
 ---
 title: "S5 Preparation of Climate Data"
-author: "Author Blank for Double Blind Peer Review"
+author: "Benjamin R Fitzpatrick"
 output: html_notebook
 ---
 
@@ -32,12 +32,12 @@ Thus in the absence of finer resolution climate data it seems worthwhile to incl
 The ants occurrence data were collected between 2009 and 2017.
 Consequently, I will calculate climatic summaries for each plot for the year preceding the year in which the ants were sampled at that plot and two longer periods prior to this year of sampling. 
 Having ants occurrence data from 2017 and only having climate data available up to the end of 2016 it will not be possible to calculate descriptions of the climate in the year of sampling for all samples.
-*Coauthor's name obfuscated* has suggested using the 5 year and 10 year periods prior to the year in which the ants were sampled for this purpose.
+ACR has suggested using the 5 year and 10 year periods prior to the year in which the ants were sampled for this purpose.
 I will start by calculating summary statistics from the daily climate data in the style of BIOCLIM (Nix, 1986; Busby, 1991) and ANUCLIM (Xu & Hutchinson, 2011).
 The BIOCLIM and ANUCLIM statistics have been designed to summarise time series of climatic data into a set of summary statistics of broad relevance to biological processes.
 These variables may hold relevance to the distribution of the red wood ants directly or indirectly through relevance to the phloem feeding mutualists of red wood ants and the tree species that host these mutualists.
-*Coauthor's name obfuscated* and I have also designed a small set of summary statistics to quantify aspects of the climate that may hold direct relevance to specific aspects of the biology of red wood ants. 
-In the sections below I describe in greater detail on the BIOCLIM and ANUCLIM inspired summary statistics that I will calculate. Following this section I introduce the summary statistics *Coauthor's name obfuscated* and I have proposed to quantify climatic effects on ant foraging. I conclude with a brief discussion other aspects of the ants' biology that may be affected by aspects of the climate which are harder to quantify from the combination of the climate data we have and the research conducted on these ants to date.
+ACR and I have also designed a small set of summary statistics to quantify aspects of the climate that may hold direct relevance to specific aspects of the biology of red wood ants. 
+In the sections below I describe in greater detail on the BIOCLIM and ANUCLIM inspired summary statistics that I will calculate. Following this section I introduce the summary statistics ACR and I have proposed to quantify climatic effects on ant foraging. I conclude with a brief discussion other aspects of the ants' biology that may be affected by aspects of the climate which are harder to quantify from the combination of the climate data we have and the research conducted on these ants to date.
 
 ### BIOCLIM and ANUCLIM
 The BIOCLIM summary statistics are calculated from time series of temperature and precipitation data.
@@ -58,7 +58,7 @@ The additional ANUCLIM variables being very much in the style of the original BI
 In addition to the BIOCLIM and ANUCLIM style statistics discussed above I have also calculated BIOCLIM style interval based statistics for ants' active and dormant periods. 
 I have not been able to find references on what cues the start or end of dormancy so my idea of defining these periods based on characteristics of the daily climate data does not appear feasible. 
 Furthermore this may not have been a particularly good idea to begin with as microclimatic variations due to factors such as aspect and the amount of shading from the canopy may be affecting the dates of the start and end of the active period at a scale much finer than the 100m resolution of the daily climate data. 
-Instead *Coauthor's name obfuscated* has suggested defining the active period as April to October inclusive and the dormant period as November to March inclusive.
+Instead ACR has suggested defining the active period as April to October inclusive and the dormant period as November to March inclusive.
 
 ### Climatic Effects on Ant Foraging
 The key points made regarding climate effects on ants' foraging behaviour in Chapter 7 of *Wood Ant Ecology and Conservation* (Stockan, Robinson 2016) are summarised below.
@@ -77,7 +77,7 @@ Ants' foraging is disrupted by:
 The high temperature threshold beyond which foraging is disrupted may vary between species (e.g. high altitude/latitude species may be disrupted by lower high temperatures than low altitude/latitude species). 
 However I have not been able to find literature on this topic.
 I\'ve also not been able to find references on what would be a sufficiently high daily precipitation to disrupt ants' foraging.
-Consequently, *Coauthor's name obfuscated* and I have defined a summary statistic as the number of days during the active period when the weather should have limited foraging based on the above information. 
+Consequently, ACR and I have defined a summary statistic as the number of days during the active period when the weather should have limited foraging based on the above information. 
 We define days on which the weather could disrupt foraging as days between April and October that have one or more of the following characteristics:
 
  * maximum temperature &lt; 5 C
@@ -103,7 +103,7 @@ Consistently cool temperatures over winter keep ant metabolisms low and saves th
 
 If a colony\'s over wintering chamber were to warm at some point during the dormant period this would increase the ants' metabolic rates and cost more energy than if they had been able to remain cool throughout their dormancy. 
 The difficulty with detecting such warmings from the climate data arises from the climate data containing only above ground temperatures and the over wintering chamber being underground beneath the nest and thus quite well insulated. 
-After consideration *Coauthor's name obfuscated* and I have decided not to attempt to quantify this phenomena from the available climate data.
+After consideration ACR and I have decided not to attempt to quantify this phenomena from the available climate data.
 
 ### Climate Effects on Aphids
 
@@ -258,7 +258,7 @@ summary(RWAMO.tb$CLNR %in% Plot.Visit.Times.tb$CLNR)
 
 Thus we lack site visit times for 26 of the plots that were searched for ant mounds.
 
-I have asked *Coauthor's name obfuscated* about this and he has provided estimates of the missing times and dates of site visits based on adjacent worksteps in the field schedule in the file `Fehlende_Zeitangaben.xlsx`:
+I have asked CD about this and he has provided estimates of the missing times and dates of site visits based on adjacent worksteps in the field schedule in the file `Fehlende_Zeitangaben.xlsx`:
 
 ```{r}
 Add.Times.tb <- read_excel(path = '~/rwa/data/NFI/Daten/Fehlende_Zeitangaben_v2.xlsx', sheet = 'SQL_Result_Removed_Comment_Row')
@@ -1433,7 +1433,7 @@ summary(dp.clim.ss.tb)
 
 ### Climate Effects on Ants' Foraging
 
-*Coauthor's name obfuscated* and I have devised a summary statistic for the amount of time during the active period when the weather would limit foraging. This being the number of days between April and October that have one or two of the following characteristics:
+ACR and I have devised a summary statistic for the amount of time during the active period when the weather would limit foraging. This being the number of days between April and October that have one or two of the following characteristics:
 
  * maximum temperature <= 5 C
 
